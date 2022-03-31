@@ -135,7 +135,7 @@ library(rethinking)
 
 stanDso = rstan::stan_model(file='tResponsePartialPooling.stan')
 
-######## models of 3 sizes using stan
+######## models of various sizes using stan
 str(dfData)
 m1 = model.matrix(values ~ Coef.1 - 1, data=dfData)
 m2 = model.matrix(values ~ Coef.2 - 1, data=dfData)
@@ -159,13 +159,11 @@ traceplot(fit.stan.4, 'populationMean')
 traceplot(fit.stan.4, 'sigmaPop')
 traceplot(fit.stan.4, 'sigmaRan')
 
-### equivalent model formulated differently
-m3 = model.matrix(values ~ Coef.3 - 1, data=dfData)
-m4 = model.matrix(values ~ Coef.4 - 1, data=dfData)
-m = cbind(m3, m4)
+### model without the sampling related covariates
+m = cbind(m1, m2)
 lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
-                 NscaleBatches=2, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.3)),
-                                              rep(2, times=nlevels(dfData$Coef.4))),
+                 NscaleBatches=2, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.1)),
+                                              rep(2, times=nlevels(dfData$Coef.2))),
                  y=dfData$values)
 
 fit.stan.2 = sampling(stanDso, data=lStanData, iter=1000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
@@ -177,32 +175,11 @@ traceplot(fit.stan.2, 'populationMean')
 traceplot(fit.stan.2, 'sigmaPop')
 traceplot(fit.stan.2, 'sigmaRan')
 
-## just using the one covariate
-m = model.matrix(values ~ Coef.3 - 1, data=dfData)
-
-lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
-                 NscaleBatches=1, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.3))),
-                 y=dfData$values)
-
-fit.stan.1 = sampling(stanDso, data=lStanData, iter=1000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
-                                                                           'nu', 'mu', 'log_lik'),
-                      cores=2)
-print(fit.stan.1, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu', 'betas'), digits=3)
-
-
 ## some model scores and comparisons
-compare(fit.stan.4, fit.stan.2, fit.stan.1)
-compare(fit.stan.4, fit.stan.2, fit.stan.1, func = LOO)
-plot(compare(fit.stan.4, fit.stan.2, fit.stan.1))
+compare(fit.stan.4, fit.stan.2)
+compare(fit.stan.4, fit.stan.2, func = LOO)
+plot(compare(fit.stan.4, fit.stan.2))
 
-# plot(LOOPk(fit.stan.2) ~ WAIC(fit.stan.2, pointwise = T))
-
-## plot coefficients
-# ct = coeftab(fit.stan.4, fit.stan.2, fit.stan.1)
-# rn = rownames(ct@coefs)
-# i = grep('betas', rn)
-# plot(ct, pars=rn[i[1:10]])
-# plot(ct, pars=rn[i])
 ############### new simulated data
 ###############
 ### generate some posterior predictive data
@@ -215,9 +192,9 @@ simulateOne = function(mu, sigma, nu){
   return(yrep)
 }
 
-## sample n values, 1000 times
+## sample n values, numerous times
 mDraws.sim = matrix(NA, nrow = nrow(dfData), ncol=300)
-l = extract(fit.stan.1)
+l = extract(fit.stan.2)
 for (i in 1:300){
   p = sample(1:nrow(l$mu), 1)
   mDraws.sim[,i] = simulateOne(l$mu[p,], 
@@ -245,60 +222,44 @@ points(rowMeans(mDraws.sim)[dfData$ind == 'PC1'], rowMeans(mDraws.sim)[dfData$in
        col=c(1,2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], pch='1')
 
 plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
-     col=c(1,2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], main='PCA Components - original and model 3',
-     xlab='PC1', ylab='PC2', xlim=c(-3, 3), ylim=c(-2, 2))
+     col=c(1,2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], main='PCA Components - original and model 2',
+     xlab='PC1', ylab='PC2', xlim=c(-4, 4), ylim=c(-3, 4), pch=15)
 
 apply(mDraws.sim, 2, function(x) {
   points(x[dfData$ind == 'PC1'], x[dfData$ind == 'PC2'],
          col=c(1,2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], pch=20)
 })
 
+## try a different colour
+plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
+     col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], main='PCA Components - original and model 2',
+     xlab='PC1', ylab='PC2', xlim=c(-4.5, 4.5), ylim=c(-4, 4), pch=15, cex=1.5)
 
-# ############## differences in coefficients
-# ## get the coefficient of interest - Modules in our case from the random coefficients section
-# mCoef = extract(fit.stan.2)$betas
-# dim(mCoef)
-# ## get the intercept at population level
-# iIntercept = as.numeric(extract(fit.stan.2)$populationMean)
-# ## add the intercept to each coefficient, to get the full coefficient
-# mCoef = sweep(mCoef, 1, iIntercept, '+')
-# 
-# ## split the data into the comparisons required
-# d = data.frame(cols=1:ncol(mCoef), mods=c(levels(dfData$Coef.3), levels(dfData$Coef.4)))#, levels(dfData$Coef.4)))
-# # the split is done below on : symbol
-# ## split this factor into sub factors
-# f = strsplit(as.character(d$mods), ':')
-# d = cbind(d, do.call(rbind, f))
-# head(d)
-# 
-# d[d$`2` == 'PC1',]
-# ## main effects + interactions
-# tapply(dfData$values, dfData$Coef.3, mean)
-# iLei.New.PC1 = rowSums(mCoef[,c(1, 5)])
-# iNl.New.PC1 = rowSums(mCoef[,c(3, 5)])
-# iLei.Old.PC1 = rowSums(mCoef[,c(1, 7)])
-# iNl.Old.PC1 = rowSums(mCoef[,c(3, 7)])
-# 
-# # iWT.PC1.av = rowMeans(cbind(iWT.B2.PC1, iWT.B1.PC1))
-# # iKO.PC1.av = rowMeans(cbind(iKO.B2.PC1, iKO.B1.PC1))
-# 
-# ## main effects
-# tapply(dfData$values, dfData$Coef.1, mean)
-# summary(mCoef[,1])
-# summary(mCoef[,3])
-# 
-# tapply(dfData$values, dfData$Coef.2, mean)
-# mean(mCoef[,5])
-# mean(mCoef[,7])
-# ##########################################
+apply(mDraws.sim, 2, function(x) {
+  points(x[dfData$ind == 'PC1'], x[dfData$ind == 'PC2'],
+         col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], pch=20, cex=0.3)
+})
 
-m = cbind(extract(fit.stan.4)$sigmaRan, extract(fit.stan.4)$sigmaPop) 
+points(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
+       col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], pch=15, cex=1.5)
+
+# colour the data with the regions covariates
+plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
+     col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], main='PCA Components - original and simulated',
+     xlab='PC1', ylab='PC2', pch=c(10,4)[as.numeric(dfData$fTreatment)[dfData$ind == 'PC1']])
+legend('topleft', legend = c('norm', 'pre'), pch=c(10, 4))
+points(rowMeans(mDraws.sim)[dfData$ind == 'PC1'], rowMeans(mDraws.sim)[dfData$ind == 'PC2'],
+       col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], pch='1')
+legend('topright', legend = levels(dfData$fSite), fill=c(1:5))
+
+
+m = cbind(extract(fit.stan.2)$sigmaRan, extract(fit.stan.2)$sigmaPop) 
 dim(m)
 m = log(m)
-colnames(m) = c('Treatment', 'Genotype', 'TrGt', 'TechnicalRep', 'Residual')
+colnames(m) = c('Treatment', 'Region', 'Residual')
 pairs(m, pch=20, cex=0.5, col='grey')
 
-df = stack(data.frame(m[,-5]))
+df = stack(data.frame(m[,-3]))
 histogram(~ values | ind, data=df, xlab='Log SD', scales=list(relation='free'))
 
 ## calculate bayesian p-value for this test statistic
