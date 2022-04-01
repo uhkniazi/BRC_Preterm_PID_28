@@ -14,6 +14,7 @@ dim(mCounts)
 mCounts = t(mCounts)
 mCounts[1:10, 1:10]
 range(mCounts)
+# remove NA values
 f = apply(mCounts, 2, is.na)
 f2 = rowSums(f)
 table(f2)
@@ -242,6 +243,8 @@ apply(mDraws.sim, 2, function(x) {
 
 points(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
        col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], pch=15, cex=1.5)
+
+legend('topleft', legend = levels(dfData$fSite), fill=c(1:5))
 
 # colour the data with the regions covariates
 plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
