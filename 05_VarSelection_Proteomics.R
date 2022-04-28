@@ -35,10 +35,12 @@ length(s)
 
 lData.train = list(data=t(mCounts), covariates=dfMeta)
 
+rm(lData)
 ## select variables showing average difference
 p.vals = lapply(1:ncol(lData.train$data), function(x){
-  df = data.frame(y=lData.train$data[,x], d=lData.train$covariates$fGroups, c=lData.train$covariates$Csite)
-  f = lm(y ~ d + c, data=df)
+  df = data.frame(y=lData.train$data[,x], d=lData.train$covariates$fGroups, c=lData.train$covariates$Csite,
+                  e=lData.train$covariates$CGAsampling, f=lData.train$covariates$CGSamDel)
+  f = lm(y ~ d + c + e + f, data=df)
   s = summary(f)$coefficients
   return(s['dpre', 4])
 })
@@ -52,24 +54,104 @@ f = which(dfPvals$pvalue < 0.01)
 length(f)
 cvTopVariables.lm = rownames(dfPvals)[f]
 
-## propensity score calculation
-f = glm(fGroups ~ Csite, data=lData.train$covariates, family=binomial(link='logit'))
+# additional variable to map the sample numbers as 
+# we may drop some after matching and overlap
+lData.train$covariates$index = 1:nrow(lData.train$covariates)
+## propensity score calculation to match samples
+cor(lData.train$covariates$CGAsampling, lData.train$covariates$CGSamDel)
+colnames(lData.train$covariates)
+df = data.frame(lData.train$covariates[, c(7 ,4, 5)])
+df$CGAsampling = scale(df$CGAsampling); df$CGSamDel = scale(df$CGSamDel)
+f = glm(fGroups ~ CGAsampling + CGSamDel, data=df, family=binomial(link='logit'))
+summary(f)
+# propensity score
 ivPropensity = fitted(f)
+lData.train$propensity = ivPropensity
+fG = lData.train$covariates$fGroups
+hist2(ivPropensity[fG=='pre'], 
+      ivPropensity[fG=='norm'], legends = c('pr', 'n'))
 
-df = data.frame(d=lData.train$data[,1], y=lData.train$covariates$fGroups, c=lData.train$covariates$Csite, p=ivPropensity)
+## as there is no overlap, use the covariates only in overlapping areas
+# ## bin the propensity score vector
+# ## to find overlapping bins from both pre and norm groups
+# b = cut(ivPropensity, breaks = 5)
+# iNorm = b[fG=='norm']
+# iIndex = which(b %in% unique(iNorm))
+# ivPropensity.sub = ivPropensity[iIndex]
+# fG.sub = fG[iIndex]
+# hist2(ivPropensity.sub[fG.sub=='pre'], 
+#       ivPropensity.sub[fG.sub=='norm'], legends = c('pr', 'n'))
+# table(fG)
+# table(fG.sub)
+# ## this seems to leave almost no pre observations behind
+## repeat on individual covariates to choose common support regions
+ivPropensity = lData.train$covariates$CGSamDel
 
-## try some model fits with covariates
-fit.1 = glm(y ~ d, data=df, family='binomial')
-fit.2 = glm(y ~ d + c, data=df, family='binomial')
-fit.3 = glm(y ~ d + p, data=df, family='binomial')
+hist2(ivPropensity[fG=='pre'], 
+      ivPropensity[fG=='norm'], legends = c('pr', 'n'))
 
-summary(fit.1); summary(fit.2); summary(fit.3)
+## bin the propensity score vector
+## to find overlapping bins from both pre and norm groups
+b = cut(ivPropensity, breaks = 10)
+levels(b)
+iNorm = b[fG=='norm']
+iPre = b[fG == 'pre']
+iInter = sort(intersect(iPre, iNorm))
+iIndex = which(b %in% iInter)
+ivPropensity.sub = ivPropensity[iIndex]
+fG.sub = fG[iIndex]
+hist2(ivPropensity.sub[fG.sub=='pre'], 
+      ivPropensity.sub[fG.sub=='norm'], legends = c('pr', 'n'))
+table(fG)
+table(fG.sub)
 
-## regress out the predictor variable
-fit.reg = lm(d ~ p, data=df)
-p.resid = resid(fit.reg)
-fit.4 = glm(y ~ p.resid, data=df, family='binomial')
-summary(fit.1); summary(fit.2); summary(fit.3); summary(fit.4)
+## this match is more useful overlap - use this index to subset the data
+lData.train.original = lData.train
+lData.train$data = lData.train$data[iIndex,]
+lData.train$covariates = lData.train$covariates[iIndex,]
+# perform matching using propensity score
+# library(MatchIt)
+z = as.numeric(lData.train$covariates$fGroups) - 1
+df = data.frame(fGroups = z, Csite=lData.train$covariates$Csite,
+                CGAsampling=scale(lData.train$covariates$CGAsampling),
+                CGSamDel = scale(lData.train$covariates$CGSamDel))
+f = glm(fGroups ~ CGAsampling + CGSamDel, data = df,
+        family=binomial(link='logit'))
+summary(f)
+df$propensity=fitted(f)
+hist(df$propensity)
+hist2(df$propensity[df$fGroups==1], df$propensity[df$fGroups==0])
+library(Matching)
+# matches = matchit(fGroups ~ CGAsampling + CGSamDel, data = df, 
+#                   replace = T)
+# summary(matches)
+colnames(df)
+#matches = Match(Tr=df$fGroups, X = df$propensity, estimand = 'ATE')
+matches = Match(Tr=df$fGroups, X = as.matrix(df[,c(3, 4)]), estimand = 'ATE', replace = T)
+summary(matches)
+iIndex = c(matches$index.treated, matches$index.control)
+
+lData.train$data = lData.train$data[iIndex,]
+lData.train$covariates = lData.train$covariates[iIndex,]
+
+# df = data.frame(d=lData.train$data[,1], y=lData.train$covariates$fGroups, c=lData.train$covariates$Csite, p=ivPropensity)
+# 
+# ## try some model fits with covariates
+# fit.1 = glm(y ~ d, data=df, family='binomial')
+# fit.2 = glm(y ~ d + c, data=df, family='binomial')
+# fit.3 = glm(y ~ d + p, data=df, family='binomial')
+# 
+# summary(fit.1); summary(fit.2); summary(fit.3)
+# 
+# ## regress out the predictor variable
+# fit.reg = lm(d ~ p, data=df)
+# p.resid = resid(fit.reg)
+# fit.4 = glm(y ~ p.resid, data=df, family='binomial')
+# summary(fit.1); summary(fit.2); summary(fit.3); summary(fit.4)
+df = data.frame(c=lData.train$covariates$CGSamDel,
+                f=lData.train$covariates$fGroups)
+hist2(df$c[df$f=='pre'], df$c[df$f=='norm'], main = 'CGSamDel', 
+      legends = c('pre', 'norm'), legend.pos = 'topleft' )
 
 if(!require(downloader) || !require(methods)) stop('Library downloader and methods required')
 
@@ -89,22 +171,22 @@ oVar.r = CVariableSelection.RandomForest(dfData, fGroups, boot.num = 100)
 
 plot.var.selection(oVar.r)
 
-########## adjust the data first
-m = apply(lData.train$data[,cvTopVariables.lm], 2, function(x){
-  return(resid(lm(x ~ ivPropensity)))
-})
-
-lData.train$data_adjusted = m
-dfData = data.frame(m)
-fGroups = lData.train$covariates$fGroups
-
-oVar.rAdj = CVariableSelection.RandomForest(dfData, fGroups, boot.num = 100)
-
-plot.var.selection(oVar.rAdj)
+# ########## adjust the data first
+# m = apply(lData.train$data[,cvTopVariables.lm], 2, function(x){
+#   return(resid(lm(x ~ ivPropensity)))
+# })
+# 
+# lData.train$data_adjusted = m
+# dfData = data.frame(m)
+# fGroups = lData.train$covariates$fGroups
+# 
+# oVar.rAdj = CVariableSelection.RandomForest(dfData, fGroups, boot.num = 100)
+# 
+# plot.var.selection(oVar.rAdj)
 
 ## there does seem to be a difference in the top variables after adjustment
 ######################## Stan section for binomial regression approach
-dfData = data.frame(lData.train$data_adjusted[,cvTopVariables.lm])
+dfData = data.frame(lData.train$data[,cvTopVariables.lm])
 dim(dfData)
 dfData$fGroups = lData.train$covariates$fGroups
 table(dfData$fGroups)
@@ -190,7 +272,7 @@ xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial Adjusted',
 
 # ## find correlated variables
 dim(dfData)
-mData = as.matrix(dfData[,-87])
+mData = as.matrix(dfData[,-31])
 length(as.vector(mData))
 mCor = cor(mData, use="na.or.complete")
 library(caret)
@@ -206,32 +288,32 @@ n = sapply(n, function(x) {
   rownames(mCor)[(abs(mCor[,x]) >= 0.7)]
 })
 
-cvTopVariables.rf = rownames(CVariableSelection.RandomForest.getVariables(oVar.rAdj))[1:20]
+cvTopVariables.rf = rownames(CVariableSelection.RandomForest.getVariables(oVar.r))[1:20]
 cvTopVariables.bin = names(m)[1:20]
 table(cvTopVariables.bin %in% cvTopVariables.rf)
 cvTopVariables = unique(c(cvTopVariables.rf, cvTopVariables.bin))
 length(cvTopVariables)
 ## subset selection
-dfData = data.frame(lData.train$data_adjusted[,cvTopVariables])
+dfData = data.frame(lData.train$data[,cvTopVariables])
 fGroups = lData.train$covariates$fGroups
 oVar.sub = CVariableSelection.ReduceModel(dfData, fGroups, boot.num = 100)
 plot.var.selection(oVar.sub)
 table(fGroups)
 log(40)
 # select 3 to 4 variables
-cvVar = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 6)
+cvVar = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 4)
 
 ## there is a small bug as the 2 proteins 590 and 59 have similar prefix
 ## that is why this additional protein is added to the results
 ## it is due to this line 
 ## https://github.com/uhkniazi/CCrossValidation/blob/55e7ab5ee27403a190fe7daf507bd57731493ae4/CCrossValidation.R#L931
 #cvVar = cvVar[1:3]
-cvVar = cvVar[1:6]
+# cvVar = cvVar[1:6]
 table(cvVar %in% cvTopVariables.bin)
 table(cvVar %in% cvTopVariables.rf)
 
 ## prepare input data
-dfData = data.frame(lData.train$data_adjusted[,cvVar])
+dfData = data.frame(lData.train$data[,cvVar])
 fGroups = lData.train$covariates$fGroups
 levels(fGroups)
 # cross validation
