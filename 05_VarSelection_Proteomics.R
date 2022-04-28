@@ -109,6 +109,7 @@ table(fG.sub)
 lData.train.original = lData.train
 lData.train$data = lData.train$data[iIndex,]
 lData.train$covariates = lData.train$covariates[iIndex,]
+
 # perform matching using propensity score
 # library(MatchIt)
 z = as.numeric(lData.train$covariates$fGroups) - 1
@@ -127,7 +128,7 @@ library(Matching)
 # summary(matches)
 colnames(df)
 #matches = Match(Tr=df$fGroups, X = df$propensity, estimand = 'ATE')
-matches = Match(Tr=df$fGroups, X = as.matrix(df[,c(3, 4)]), estimand = 'ATE', replace = T)
+matches = Match(Tr=df$fGroups, X = as.matrix(df[,c(3, 4)]), estimand = 'ATC', replace = T)
 summary(matches)
 iIndex = c(matches$index.treated, matches$index.control)
 
@@ -278,30 +279,32 @@ mCor = cor(mData, use="na.or.complete")
 library(caret)
 image(mCor)
 ### find the columns that are correlated and should be removed
-n = findCorrelation((mCor), cutoff = 0.7, names=T)
+n = findCorrelation((mCor), cutoff = 0.8, names=T)
 data.frame(n)
 # sapply(n, function(x) {
 #   (abs(mCor[,x]) >= 0.7)
 # })
 # 
 n = sapply(n, function(x) {
-  rownames(mCor)[(abs(mCor[,x]) >= 0.7)]
+  rownames(mCor)[(abs(mCor[,x]) >= 0.8)]
 })
+
 
 cvTopVariables.rf = rownames(CVariableSelection.RandomForest.getVariables(oVar.r))[1:20]
 cvTopVariables.bin = names(m)[1:20]
 table(cvTopVariables.bin %in% cvTopVariables.rf)
 cvTopVariables = unique(c(cvTopVariables.rf, cvTopVariables.bin))
 length(cvTopVariables)
+cvTopVariables = cvTopVariables[!(cvTopVariables %in% c('Prot_617', 'Prot_788', 'Prot_197'))]
 ## subset selection
 dfData = data.frame(lData.train$data[,cvTopVariables])
 fGroups = lData.train$covariates$fGroups
 oVar.sub = CVariableSelection.ReduceModel(dfData, fGroups, boot.num = 100)
 plot.var.selection(oVar.sub)
 table(fGroups)
-log(40)
-# select 3 to 4 variables
-cvVar = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 4)
+log(15)
+# select 1 to 2 variables
+cvVar = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 2)
 
 ## there is a small bug as the 2 proteins 590 and 59 have similar prefix
 ## that is why this additional protein is added to the results
@@ -316,9 +319,10 @@ table(cvVar %in% cvTopVariables.rf)
 dfData = data.frame(lData.train$data[,cvVar])
 fGroups = lData.train$covariates$fGroups
 levels(fGroups)
+table(fGroups)
 # cross validation
 oCV.lda = CCrossValidation.LDA(dfData[,cvVar], dfData[,cvVar], fGroups, fGroups, level.predict = 'pre',
-                               boot.num = 100, k.fold = 10) 
+                               boot.num = 100, k.fold = 3) 
 
 plot.cv.performance(oCV.lda)
 
@@ -331,7 +335,7 @@ cvVar.names = dfKey[dfKey$key %in% cvVar, 'original_names']
 ########################################################################
 ## refit the binomial model and make some figures
 ########################################################################
-dfData = data.frame(lData.train$data_adjusted[,cvVar])
+dfData = data.frame(lData.train$data[,cvVar])
 dim(dfData)
 ## some acrobatics to rename variables
 df = dfKey
@@ -391,69 +395,69 @@ dim(mCoef)
 colnames(mCoef) = c('Intercept', colnames(lData$mModMatrix)[2:ncol(lData$mModMatrix)])
 ## get the predicted values
 ## create model matrix
-X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,colnames(mCoef)[-1]]))
+X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,1:3]))
 colnames(X) = colnames(mCoef)
 head(X)
 ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
-xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial Adjusted, 6 Variables',
+xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 2 Variables',
        ylab='Predicted Probability of Pre-term',
        data=dfData)
 
-#########################################################################
-### repeat model fitting on unadjusted data with adjustment covariate
-#########################################################################
-dfData = data.frame(lData.train$data[,cvVar])
-dim(dfData)
-## some acrobatics to rename variables
-df = dfKey
-df = df[df$key %in% cvVar,]
-identical(df$key, cvVar)
-i = match(cvVar, df$key)
-identical(cvVar, df$key[i])
-df = df[i,]
-identical(colnames(dfData), df$key)
-colnames(dfData) = df$original_names
-dfData$site = dfMeta$Csite
-dfData$fGroups = lData.train$covariates$fGroups
-table(dfData$fGroups)
-rm(fGroups)
-levels(dfData$fGroups)
-lData = list(resp=ifelse(dfData$fGroups == 'pre', 1, 0), mModMatrix=model.matrix(fGroups ~ 1 + ., data=dfData))
-
-# stanDso = rstan::stan_model(file='binomialRegressionSharedCoeffVariance.stan')
-
-lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData$mModMatrix,
-                 y=lData$resp)
-
-## give initial values
-# initf = function(chain_id = 1) {
-#   list(betas=rep(0, times=ncol(lStanData$X)), tau=0.5)
-# }
-
-
-fit.stan.2 = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('tau', 'betas2', 'log_lik'), cores=4,# init=initf,
-                    control=list(adapt_delta=0.99, max_treedepth = 13))
-
-# save(fit.stan, file='temp/fit.stan.binom_preterm_met.rds')
-
-print(fit.stan.2, c('betas2', 'tau'))
-# print(fit.stan, 'tau')
-# traceplot(fit.stan, 'tau')
-
-## get the coefficient of interest
-mCoef = extract(fit.stan.2)$betas2
-dim(mCoef)
-## get the intercept
-iIntercept = mCoef[,1]
-mCoef = mCoef[,-1]
-colnames(mCoef) = colnames(lData$mModMatrix)[2:ncol(lData$mModMatrix)]
-
-## coeftab object 
-p = paste0('betas2[', 2:7, ']')
-plot(coeftab(fit.stan, fit.stan.2), pars=p)
-ct.1 = coeftab(fit.stan.2)
-rn = rownames(ct.1@coefs)
-i = grep('betas', rn)
-rownames(ct.1@coefs)[i[-1]] = colnames(mCoef)
-rownames(ct.1@se)[i[-1]] = colnames(mCoef)
-plot(ct.1, pars=colnames(mCoef))
+# #########################################################################
+# ### repeat model fitting on unadjusted data with adjustment covariate
+# #########################################################################
+# dfData = data.frame(lData.train$data[,cvVar])
+# dim(dfData)
+# ## some acrobatics to rename variables
+# df = dfKey
+# df = df[df$key %in% cvVar,]
+# identical(df$key, cvVar)
+# i = match(cvVar, df$key)
+# identical(cvVar, df$key[i])
+# df = df[i,]
+# identical(colnames(dfData), df$key)
+# colnames(dfData) = df$original_names
+# dfData$site = dfMeta$Csite
+# dfData$fGroups = lData.train$covariates$fGroups
+# table(dfData$fGroups)
+# rm(fGroups)
+# levels(dfData$fGroups)
+# lData = list(resp=ifelse(dfData$fGroups == 'pre', 1, 0), mModMatrix=model.matrix(fGroups ~ 1 + ., data=dfData))
+# 
+# # stanDso = rstan::stan_model(file='binomialRegressionSharedCoeffVariance.stan')
+# 
+# lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData$mModMatrix,
+#                  y=lData$resp)
+# 
+# ## give initial values
+# # initf = function(chain_id = 1) {
+# #   list(betas=rep(0, times=ncol(lStanData$X)), tau=0.5)
+# # }
+# 
+# 
+# fit.stan.2 = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('tau', 'betas2', 'log_lik'), cores=4,# init=initf,
+#                     control=list(adapt_delta=0.99, max_treedepth = 13))
+# 
+# # save(fit.stan, file='temp/fit.stan.binom_preterm_met.rds')
+# 
+# print(fit.stan.2, c('betas2', 'tau'))
+# # print(fit.stan, 'tau')
+# # traceplot(fit.stan, 'tau')
+# 
+# ## get the coefficient of interest
+# mCoef = extract(fit.stan.2)$betas2
+# dim(mCoef)
+# ## get the intercept
+# iIntercept = mCoef[,1]
+# mCoef = mCoef[,-1]
+# colnames(mCoef) = colnames(lData$mModMatrix)[2:ncol(lData$mModMatrix)]
+# 
+# ## coeftab object 
+# p = paste0('betas2[', 2:7, ']')
+# plot(coeftab(fit.stan, fit.stan.2), pars=p)
+# ct.1 = coeftab(fit.stan.2)
+# rn = rownames(ct.1@coefs)
+# i = grep('betas', rn)
+# rownames(ct.1@coefs)[i[-1]] = colnames(mCoef)
+# rownames(ct.1@se)[i[-1]] = colnames(mCoef)
+# plot(ct.1, pars=colnames(mCoef))
