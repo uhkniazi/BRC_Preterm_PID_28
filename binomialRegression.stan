@@ -16,8 +16,15 @@ transformed parameters {
   mu = inv_logit(mu);
 }
 model {
-  betas ~ cauchy(0, 10); //prior for the betas
+  betas[1] ~ cauchy(0, 10); //prior for the betas
+  betas[2:Ncol] ~ cauchy(0, 1);
   
   // likelihood function
   y ~ bernoulli(mu);
+}
+generated quantities {
+  int y_new[Ntotal];
+  vector[Ntotal] log_lik;
+  y_new = bernoulli_rng(mu);
+  for (i in 1:Ntotal) log_lik[i] = bernoulli_lpmf(y[i] | mu[i]);
 }
