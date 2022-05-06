@@ -438,7 +438,7 @@ cvVar.names = dfKey[dfKey$key %in% cvVar, 'original_names']
 ########################################################################
 ## refit the binomial model and make some figures
 ########################################################################
-dfData = cbind(lData.train$data[,cvVar])#, lData.train$covariates[,c(4, 5)])
+dfData = cbind(lData.train$data[,cvVar], lData.train$covariates[,c(4, 5)])
 head(dfData)
 dim(dfData)
 dfData = data.frame(scale(dfData))
@@ -456,9 +456,10 @@ dfData$fGroups = lData.train$covariates$fGroups
 table(dfData$fGroups)
 rm(fGroups)
 levels(dfData$fGroups)
+head(dfData)
 lData = list(resp=ifelse(dfData$fGroups == 'pre', 1, 0), mModMatrix=model.matrix(fGroups ~ 1 + ., data=dfData))
 
-stanDso = rstan::stan_model(file='binomialRegression.stan')
+stanDso = rstan::stan_model(file='binomialRegressionGuessMixture.stan')
 
 lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData$mModMatrix,
                  y=lData$resp)
@@ -469,12 +470,12 @@ lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData
 # }
 
 
-fit.stan = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('betas', 'log_lik'), cores=4,# init=initf,
+fit.stan = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('betas', 'log_lik', 'guess'), cores=4,# init=initf,
                     control=list(adapt_delta=0.99, max_treedepth = 13))
 
 # save(fit.stan, file='temp/fit.stan.binom_preterm_met.rds')
 
-print(fit.stan, c('betas'))
+print(fit.stan, c('betas', 'guess'))
 # print(fit.stan, 'tau')
 # traceplot(fit.stan, 'tau')
 
@@ -501,7 +502,7 @@ colnames(mCoef) = c('Intercept', colnames(lData$mModMatrix)[2:ncol(lData$mModMat
 ## get the predicted values
 ## create model matrix
 head(dfData)
-X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,1:2]))
+X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,-(ncol(dfData))]))
 colnames(X) = colnames(mCoef)
 head(X)
 ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
@@ -511,8 +512,10 @@ xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 2 Variables',
 
 f1 = fit.stan # 4 var
 f2 = fit.stan # 2 var
+f3 = fit.stan # 2 var and guess
+f4 = fit.stan # 4 var and guess
 ## go back to refit with less number of variables
-plot(compare(f1, f2))
+plot(compare(f1, f2, f3, f4))
 
 ### figures
 fGroups.jitt = jitter.binary(as.numeric(dfData$fGroups)-1)
@@ -521,7 +524,7 @@ plot(dfData$AGRP, fGroups.jitt, pch=20, xlab='AGRP', ylab='Probability of preter
      main='Prediction of Preterm')
 x = seq(min(dfData$AGRP), max(dfData$AGRP), length.out = 100)
 m = cbind(1, x, mean(dfData$PLIN1))
-c = colMeans(extract(f2)$betas)
+c = colMeans(extract(fit.stan)$betas)
 lines(x, plogis(m %*% c), col='black')
 m = cbind(1, x, min(dfData$PLIN1))
 lines(x, plogis(m %*% c), col='red')
