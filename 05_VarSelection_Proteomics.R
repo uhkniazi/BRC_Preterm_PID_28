@@ -40,6 +40,22 @@ rm(lData)
 # additional variable to map the sample numbers as 
 # we may drop some after matching and overlap
 lData.train$covariates$index = 1:nrow(lData.train$covariates)
+df = lData.train$covariates
+
+tapply(df$CGAsampling, factor(df$Ccohort), summary)
+hist2(df$CGAsampling[df$Ccohort==1], df$CGAsampling[df$Ccohort==0], main = 'CGAsampling',
+      legends = c('pre', 'norm'))
+
+tapply(df$CGSamDel, factor(df$Ccohort), summary)
+hist2(df$CGSamDel[df$Ccohort==1], df$CGSamDel[df$Ccohort==0], main = 'CGSamDel',
+      legends = c('pre', 'norm'), legend.pos = 'topleft')
+
+t = as.table(xtabs(~ df$Ccohort + df$Csite))
+barplot(t, beside = T, las=2, col=c('black', 'lightgrey'), xlim=c(0, 20))
+legend('topright', legend = c('normal', 'preterm'), 
+       fill=c('black', 'lightgrey'))
+
+rm(df)
 ## propensity score calculation to match samples
 cor(lData.train$covariates$CGAsampling, lData.train$covariates$CGSamDel)
 colnames(lData.train$covariates)
@@ -166,7 +182,7 @@ m = cbind(1, min(df$CGAsampling), x)
 lines(x, plogis(m %*% c), col='red')
 m = cbind(1, max(df$CGAsampling), x)
 lines(x, plogis(m %*% c), col='green')
-legend('bottomleft', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
+legend('left', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
 
 plot(df$CGAsampling, fGroups.jitt, pch=20, xlab='CGAsampling', ylab='Probability of preterm',
      main='Prediction of Preterm vs CGAsampling')
@@ -178,7 +194,7 @@ m = cbind(1, x, min(df$CGSamDel))
 lines(x, plogis(m %*% c), col='red')
 m = cbind(1, x, max(df$CGSamDel))
 lines(x, plogis(m %*% c), col='green')
-legend('topright', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
+legend('left', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
 
 df$propensity=fitted(f)
 hist(df$propensity)
@@ -194,7 +210,7 @@ colnames(df)
 matches = Match(Tr=df$fGroups, X = as.matrix(df[,c(3, 4)]), estimand = 'ATT', replace = F)
 summary(matches)
 iIndex = c(matches$index.treated, matches$index.control)
-
+table(duplicated(iIndex))
 lData.train$data = lData.train$data[iIndex,]
 lData.train$covariates = lData.train$covariates[iIndex,]
 
@@ -231,7 +247,7 @@ dfPvals = do.call(rbind, p.vals)
 dfPvals = cbind(dfPvals, p.adjust(dfPvals[,1], method = 'BH'))
 colnames(dfPvals) = c('pvalue', 'p.adj')
 dfPvals = data.frame(dfPvals)
-f = which(dfPvals$pvalue < 0.01)
+f = which(dfPvals$pvalue < 0.05)
 length(f)
 cvTopVariables.lm = rownames(dfPvals)[f]
 
@@ -320,9 +336,9 @@ plot(ct.1, pars=colnames(mCoef))
 m = abs(colMeans(mCoef))
 m = sort(m, decreasing = T)
 
-l2 = barplot(m[1:13], 
+l2 = barplot(m[1:20], 
              las=2, xaxt='n', col='grey', main='Top Variables - binomial')
-axis(1, at = l2, labels = names(m)[1:13], tick = F, las=2, cex.axis=1 )
+axis(1, at = l2, labels = names(m)[1:20], tick = F, las=2, cex.axis=1 )
 
 ### predictive performance of the model
 ## binomial prediction
@@ -348,14 +364,14 @@ X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,colnames(mCoef)[-1]]))
 colnames(X) = colnames(mCoef)
 head(X)
 ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
-xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial Adjusted',
+xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial',
        ylab='Predicted Probability of Pre-term',
        data=dfData)
 
 
 # ## find correlated variables
 dim(dfData)
-mData = as.matrix(dfData[,-14])
+mData = as.matrix(dfData[,-47])
 length(as.vector(mData))
 mCor = cor(mData, use="na.or.complete")
 library(caret)
@@ -367,19 +383,19 @@ n = findCorrelation((mCor), cutoff = 0.8, names=T)
 # #   (abs(mCor[,x]) >= 0.7)
 # # })
 # # 
-n = sapply(n, function(x) {
-  rownames(mCor)[(abs(mCor[,x]) >= 0.8)]
-})
+# n = sapply(n, function(x) {
+#   rownames(mCor)[(abs(mCor[,x]) >= 0.8)]
+# })
 
 #cvDrop.colinear = names(n[(sapply(n, length) > 2)])
-# cvDrop.colinear = n
+cvDrop.colinear = n
 
-cvTopVariables.rf = rownames(CVariableSelection.RandomForest.getVariables(oVar.r))[1:13]
-cvTopVariables.bin = names(m)[1:13]
+cvTopVariables.rf = rownames(CVariableSelection.RandomForest.getVariables(oVar.r))[1:20]
+cvTopVariables.bin = names(m)[1:20]
 table(cvTopVariables.bin %in% cvTopVariables.rf)
 cvTopVariables = unique(c(cvTopVariables.rf, cvTopVariables.bin))
 length(cvTopVariables)
-#cvTopVariables = cvTopVariables[!(cvTopVariables %in% cvDrop.colinear)]
+cvTopVariables = cvTopVariables[!(cvTopVariables %in% cvDrop.colinear)]
 ## subset selection
 dfData = data.frame(lData.train$data[,cvTopVariables])
 dim(dfData)
@@ -412,22 +428,22 @@ oCV.lda = CCrossValidation.LDA(dfData[,cvVar], dfData[,cvVar], fGroups, fGroups,
 plot.cv.performance(oCV.lda)
 
 ## use the full data as test data
+## this does not work well because most data in this range is preterm
+## and is confounded by CGSamDel variable
 i = lData.train$iIndex
-dfData.train = data.frame(lData.train.original$data[i,cvVar])
-fGroups.train = lData.train.original$covariates$fGroups[i]
-dim(dfData.train)
-table(fGroups.train)
+dfData.test = data.frame(lData.train.original$data[-i,cvVar])
+fGroups.test = lData.train.original$covariates$fGroups[-i]
+dim(dfData.test)
+table(fGroups.test)
 
-oCV.lda = CCrossValidation.LDA(test.dat = dfData.train,
+oCV.lda = CCrossValidation.LDA(test.dat = dfData.test,
                                train.dat = dfData,
-                               test.groups = fGroups.train,
+                               test.groups = fGroups.test,
                                train.groups = fGroups,
                                level.predict = 'pre',
                                boot.num = 100, k.fold = 10) 
 
 plot.cv.performance(oCV.lda)
-
-
 
 ## names of these proteins
 lData = f_LoadObject('dataUpload/stanford_data_rlist.rds')
@@ -510,39 +526,39 @@ xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 2 Variables',
        ylab='Predicted Probability of Pre-term',
        data=dfData)
 
-f1 = fit.stan # 4 var
-f2 = fit.stan # 2 var
+f1 = fit.stan # 2 var and guess
+f2 = fit.stan # 4 var and guess
 f3 = fit.stan # 2 var and guess
 f4 = fit.stan # 4 var and guess
 ## go back to refit with less number of variables
-plot(compare(f1, f2, f3, f4))
+plot(compare(f1, f2))
 
 ### figures
 fGroups.jitt = jitter.binary(as.numeric(dfData$fGroups)-1)
 
-plot(dfData$AGRP, fGroups.jitt, pch=20, xlab='AGRP', ylab='Probability of preterm',
+plot(dfData$AGR3, fGroups.jitt, pch=20, xlab='AGR3', ylab='Probability of preterm',
      main='Prediction of Preterm')
-x = seq(min(dfData$AGRP), max(dfData$AGRP), length.out = 100)
-m = cbind(1, x, mean(dfData$PLIN1))
+x = seq(min(dfData$AGR3), max(dfData$AGR3), length.out = 100)
+m = cbind(1, x, mean(dfData$TRANCE), mean(dfData$CGAsampling), mean(dfData$CGSamDel))
 c = colMeans(extract(fit.stan)$betas)
 lines(x, plogis(m %*% c), col='black')
-m = cbind(1, x, min(dfData$PLIN1))
+m = cbind(1, x, min(dfData$TRANCE), min(dfData$CGAsampling), min(dfData$CGSamDel))
 lines(x, plogis(m %*% c), col='red')
-m = cbind(1, x, max(dfData$PLIN1))
+m = cbind(1, x, max(dfData$TRANCE), max(dfData$CGAsampling), max(dfData$CGSamDel))
 lines(x, plogis(m %*% c), col='green')
-legend('bottomleft', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
+legend('left', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
 
-plot(dfData$PLIN1, fGroups.jitt, pch=20, xlab='PLIN1', ylab='Probability of preterm',
+plot(dfData$TRANCE, fGroups.jitt, pch=20, xlab='TRANCE', ylab='Probability of preterm',
      main='Prediction of Preterm')
-x = seq(min(dfData$PLIN1), max(dfData$PLIN1), length.out = 100)
-m = cbind(1, mean(dfData$AGRP), x)
-#c = colMeans(extract(f2)$betas)
+x = seq(min(dfData$TRANCE), max(dfData$TRANCE), length.out = 100)
+m = cbind(1, mean(dfData$AGR3), x, mean(dfData$CGAsampling), mean(dfData$CGSamDel))
+c = colMeans(extract(fit.stan)$betas)
 lines(x, plogis(m %*% c), col='black')
-m = cbind(1, min(dfData$AGRP), x)
+m = cbind(1, min(dfData$AGR3), x, min(dfData$CGAsampling), min(dfData$CGSamDel))
 lines(x, plogis(m %*% c), col='red')
-m = cbind(1, max(dfData$AGRP), x)
+m = cbind(1, max(dfData$AGR3), x, max(dfData$CGAsampling), max(dfData$CGSamDel))
 lines(x, plogis(m %*% c), col='green')
-legend('bottomleft', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
+legend('right', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
 
 
 
