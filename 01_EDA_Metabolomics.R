@@ -14,7 +14,14 @@ rownames(dfData) = 1:nrow(dfMeta)
 ## as expression levels are very different to the rest of the samples
 dfMeta = dfMeta[-26,]
 dfData = dfData[-26,]
+# one sample is missing a metadata info, remove that
+which(dfMeta$BMI_group == '')
+dfMeta = dfMeta[-51,]
+dfData = dfData[-51,]
+identical(rownames(dfMeta), rownames(dfData))
+dfMeta = droplevels.data.frame(dfMeta)
 
+## some acrobatics to check data matrix
 mCounts = as.matrix(dfData)
 dim(mCounts)
 mCounts = t(mCounts)
@@ -37,42 +44,37 @@ plot(density(logit(mCounts)))
 mCounts = logit(mCounts)
 ## some EDA diagnostic plots on the data matrix
 library(downloader)
-url = 'https://raw.githubusercontent.com/uhkniazi/CDiagnosticPlots/master/CDiagnosticPlots.R'
+url = 'https://raw.githubusercontent.com/uhkniazi/CDiagnosticPlots/experimental/CDiagnosticPlots.R'
 download(url, 'CDiagnosticPlots.R')
 
 # load the required packages
 source('CDiagnosticPlots.R')
 # delete the file after source
 unlink('CDiagnosticPlots.R')
-levels(dfMeta$Age_group)
-levels(dfMeta$BMI_group)
-
 #colnames(mCounts) = as.character(dfMeta$outcome_numeric)
 oDiag.1 = CDiagnosticPlots(mCounts, 'Metabolomics')
 
 # the batch variable we wish to colour by, 
 # this can be any grouping/clustering in the data capture process
 str(dfMeta)
-fBatch = factor(dfMeta$BMI_group)
+fBatch = factor(dfMeta$Age_group)
 levels(fBatch)
 table(fBatch)
 xtabs( ~ dfMeta$outcome_numeric + dfMeta$Age_group)
-fBatch = as.factor(dfMeta$outcome_numeric)
+iPch = c(17, 20)[as.numeric(dfMeta$outcome_numeric)+1]
 
 boxplot.median.summary(oDiag.1, fBatch, legend.pos = 'topright', axis.label.cex = 1)
 plot.mean.summary(oDiag.1, fBatch, axis.label.cex = 1)
 plot.sigma.summary(oDiag.1, fBatch, axis.label.cex = 1)
 plot.missing.summary(oDiag.1, fBatch, axis.label.cex = 0.5, cex.main=1)
-plot.PCA(oDiag.1, fBatch, cex.main=1)#, csLabels = as.character(dfMeta$fGroups))
-plot.dendogram(oDiag.1, fBatch, labels_cex = 0.8, cex.main=0.7)
 # drop sample 26 as it is very different
 ## change parameters 
 l = CDiagnosticPlotsGetParameters(oDiag.1)
 l$PCA.jitter = F
 l$HC.jitter = F
 oDiag.1 = CDiagnosticPlotsSetParameters(oDiag.1, l)
-plot.PCA(oDiag.1, fBatch, legend.pos = 'topright')
-plot.dendogram(oDiag.1, fBatch, labels_cex = 1)
+plot.PCA(oDiag.1, fBatch, cex.main=1, pch = iPch, pch.cex = 1)#, csLabels = as.character(dfMeta$fGroups))
+plot.dendogram(oDiag.1, fBatch, labels_cex = 0.8, cex.main=0.7)
 #ob = calculateExtremeValues(oDiag.1)
 ## extract the PCA components and model the variation
 ######## modelling of PCA components to assign sources of variance to covariates in the design
@@ -94,16 +96,19 @@ densityplot(~ values, data=dfData)
 densityplot(~ values | ind, data=dfData, scales=list(relation='free'))
 
 # add covariates of interest to the data frame
-str(lData$covariates)
-dfData$fTreatment = lData$covariates$fGroups
-dfData$fSite = lData$covariates$Csite
-dfData$sampling = cut(lData$covariates$CGAsampling, 5, include.lowest = T)
-dfData$samDel = cut(lData$covariates$CGSamDel, 4, include.lowest = T)
+str(dfMeta)
+dfData$fTreatment = as.factor(dfMeta$outcome_numeric)
+dfData$fAge = as.factor(dfMeta$Age_group)
+dfData$fBmi = as.factor(dfMeta$BMI_group)
 
 densityplot(~ values | ind, groups=fTreatment, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
-densityplot(~ values | ind, groups=fSite, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
-densityplot(~ values | ind, groups=sampling, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
-densityplot(~ values | ind, groups=samDel, data=dfData, auto.key = list(columns=4))
+densityplot(~ values | ind, groups=fAge, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
+densityplot(~ values | ind, groups=fBmi, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
+densityplot(~ values | ind+fAge, groups=fTreatment, data=dfData, auto.key = list(columns=4), scales=list(relation='free'))
+densityplot(~ values | ind+fBmi, groups=fTreatment, data=dfData, auto.key = list(columns=4), scales=list(relation='free'))
+densityplot(~ values | ind+fBmi+fAge, groups=fTreatment, data=dfData, auto.key = list(columns=4), scales=list(relation='free'))
+
+
 plot(lData$covariates$CGAsampling ~ lData$covariates$CGSamDel)
 coplot(lData$covariates$CGAsampling ~ lData$covariates$CGSamDel | lData$covariates$fGroups)
 coplot(lData$covariates$CGAsampling ~ lData$covariates$CGSamDel | lData$covariates$Csite)
