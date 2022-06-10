@@ -21,6 +21,24 @@ dfData = dfData[-51,]
 identical(rownames(dfMeta), rownames(dfData))
 dfMeta = droplevels.data.frame(dfMeta)
 
+## structure of the metadata
+xtabs( ~ dfMeta$outcome_numeric + dfMeta$Age_group)
+xtabs( ~ dfMeta$outcome_numeric + dfMeta$BMI_group)
+f = dfMeta$BMI_group:dfMeta$Age_group
+o = dfMeta$outcome_numeric
+xtabs( ~ o + f)
+table(dfMeta$outcome_numeric)
+t = as.matrix(xtabs( ~ o + f))
+t = t/sum(rowSums(t))
+# estimate P(outcome | age, bmi)
+p_age.bmi = colSums(t)
+p_outcome_given_age.bmi = round(sweep(t, 2, p_age.bmi, FUN = '/'), 3)
+
+b = barplot(p_outcome_given_age.bmi, beside = F, xaxt='n')
+axis(1, at = b, labels = colnames(p_outcome_given_age.bmi), las=2, cex.axis=0.7,
+     tick=F)
+legend('top', legend = c('0', '1'), fill=c('black', 'grey'), xpd=T,
+       horiz=T, inset=c(0, -0.2))
 ## some acrobatics to check data matrix
 mCounts = as.matrix(dfData)
 dim(mCounts)
@@ -57,15 +75,15 @@ oDiag.1 = CDiagnosticPlots(mCounts, 'Metabolomics')
 # the batch variable we wish to colour by, 
 # this can be any grouping/clustering in the data capture process
 str(dfMeta)
-fBatch = factor(dfMeta$Age_group)
+fBatch = factor(dfMeta$Age_group):factor(dfMeta$BMI_group)
 levels(fBatch)
 table(fBatch)
 xtabs( ~ dfMeta$outcome_numeric + dfMeta$Age_group)
 iPch = c(17, 20)[as.numeric(dfMeta$outcome_numeric)+1]
 
-boxplot.median.summary(oDiag.1, fBatch, legend.pos = 'topright', axis.label.cex = 1)
-plot.mean.summary(oDiag.1, fBatch, axis.label.cex = 1)
-plot.sigma.summary(oDiag.1, fBatch, axis.label.cex = 1)
+boxplot.median.summary(oDiag.1, fBatch, legend.pos = 'topright', axis.label.cex = 0.5)
+plot.mean.summary(oDiag.1, fBatch, axis.label.cex = 0.5)
+plot.sigma.summary(oDiag.1, fBatch, axis.label.cex = 0.5)
 plot.missing.summary(oDiag.1, fBatch, axis.label.cex = 0.5, cex.main=1)
 # drop sample 26 as it is very different
 ## change parameters 
@@ -74,6 +92,7 @@ l$PCA.jitter = F
 l$HC.jitter = F
 oDiag.1 = CDiagnosticPlotsSetParameters(oDiag.1, l)
 plot.PCA(oDiag.1, fBatch, cex.main=1, pch = iPch, pch.cex = 1)#, csLabels = as.character(dfMeta$fGroups))
+legend('top', legend = c('0', '1'), pch=c(17, 20))
 plot.dendogram(oDiag.1, fBatch, labels_cex = 0.8, cex.main=0.7)
 #ob = calculateExtremeValues(oDiag.1)
 ## extract the PCA components and model the variation
@@ -108,33 +127,26 @@ densityplot(~ values | ind+fAge, groups=fTreatment, data=dfData, auto.key = list
 densityplot(~ values | ind+fBmi, groups=fTreatment, data=dfData, auto.key = list(columns=4), scales=list(relation='free'))
 densityplot(~ values | ind+fBmi+fAge, groups=fTreatment, data=dfData, auto.key = list(columns=4), scales=list(relation='free'))
 
-
-plot(lData$covariates$CGAsampling ~ lData$covariates$CGSamDel)
-coplot(lData$covariates$CGAsampling ~ lData$covariates$CGSamDel | lData$covariates$fGroups)
-coplot(lData$covariates$CGAsampling ~ lData$covariates$CGSamDel | lData$covariates$Csite)
-
 # format data for modelling, i.e. create coefficients to estimate
 str(dfData)
 dfData$Coef.1 = factor(dfData$fTreatment:dfData$ind)
-dfData$Coef.2 = factor(dfData$fSite:dfData$ind)
-dfData$Coef.3 = factor(dfData$sampling:dfData$ind)
-dfData$Coef.4 = factor(dfData$samDel:dfData$ind)
+dfData$Coef.2 = factor(dfData$fAge:dfData$ind)
+dfData$Coef.3 = factor(dfData$fBmi:dfData$ind)
 str(dfData)
 
 fit.lme1 = lmer(values ~ 1  + (1 | Coef.1), data=dfData)
 fit.lme2 = lmer(values ~ 1  + (1 | Coef.1) + (1 | Coef.2), data=dfData)
 fit.lme3 = lmer(values ~ 1  + (1 | Coef.1) + (1 | Coef.2) + (1 | Coef.3), data=dfData)
-fit.lme4 = lmer(values ~ 1  + (1 | Coef.1) + (1 | Coef.2) + (1 | Coef.3) + (1 | Coef.4), data=dfData)
 
-anova(fit.lme1, fit.lme2, fit.lme3, fit.lme4)
+anova(fit.lme1, fit.lme2, fit.lme3)
 
 summary(fit.lme1)
 summary(fit.lme2)
 
-plot((fitted(fit.lme2)), resid(fit.lme2), pch=20, cex=0.7)
-lines(lowess((fitted(fit.lme2)), resid(fit.lme2)), col=2)
-hist(dfData$values, prob=T)
-lines(density(fitted(fit.lme2)))
+# plot((fitted(fit.lme2)), resid(fit.lme2), pch=20, cex=0.7)
+# lines(lowess((fitted(fit.lme2)), resid(fit.lme2)), col=2)
+# hist(dfData$values, prob=T)
+# lines(density(fitted(fit.lme2)))
 
 ## fit model with stan with various model sizes
 library(rstan)
@@ -149,45 +161,43 @@ str(dfData)
 m1 = model.matrix(values ~ Coef.1 - 1, data=dfData)
 m2 = model.matrix(values ~ Coef.2 - 1, data=dfData)
 m3 = model.matrix(values ~ Coef.3 - 1, data=dfData)
-m4 = model.matrix(values ~ Coef.4 - 1, data=dfData)
-m = cbind(m1, m2, m3, m4)
+m = cbind(m1, m2, m3)
 
 lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
-                 NscaleBatches=4, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.1)),
+                 NscaleBatches=3, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.1)),
                                               rep(2, times=nlevels(dfData$Coef.2)),
-                                              rep(3, times=nlevels(dfData$Coef.3)),
-                                              rep(4, times=nlevels(dfData$Coef.4))),
+                                              rep(3, times=nlevels(dfData$Coef.3))),
                  y=dfData$values)
 
-fit.stan.4 = sampling(stanDso, data=lStanData, iter=1000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+fit.stan.3 = sampling(stanDso, data=lStanData, iter=1000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
                                                                            'nu', 'mu', 'log_lik'),
                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
-print(fit.stan.4, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu', 'betas'), digits=3)
+print(fit.stan.3, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu', 'betas'), digits=3)
 
-traceplot(fit.stan.4, 'populationMean')
-traceplot(fit.stan.4, 'sigmaPop')
-traceplot(fit.stan.4, 'sigmaRan')
+traceplot(fit.stan.3, 'populationMean')
+traceplot(fit.stan.3, 'sigmaPop')
+traceplot(fit.stan.3, 'sigmaRan')
 
 ### model without the sampling related covariates
-m = cbind(m1, m2)
+m = m1 # cbind(m1, m2)
 lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
-                 NscaleBatches=2, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.1)),
-                                              rep(2, times=nlevels(dfData$Coef.2))),
+                 NscaleBatches=1, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.1))),
+                                             # rep(2, times=nlevels(dfData$Coef.2))),
                  y=dfData$values)
 
-fit.stan.2 = sampling(stanDso, data=lStanData, iter=1000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
+fit.stan.1 = sampling(stanDso, data=lStanData, iter=1000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
                                                                            'nu', 'mu', 'log_lik'),
                       cores=2, control=list(adapt_delta=0.99, max_treedepth = 12))
-print(fit.stan.2, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu', 'betas'), digits=3)
+print(fit.stan.1, c('populationMean', 'sigmaPop', 'sigmaRan', 'nu', 'betas'), digits=3)
 
-traceplot(fit.stan.2, 'populationMean')
-traceplot(fit.stan.2, 'sigmaPop')
-traceplot(fit.stan.2, 'sigmaRan')
+traceplot(fit.stan.1, 'populationMean')
+traceplot(fit.stan.1, 'sigmaPop')
+traceplot(fit.stan.1, 'sigmaRan')
 
 ## some model scores and comparisons
-compare(fit.stan.4, fit.stan.2)
-compare(fit.stan.4, fit.stan.2, func = LOO)
-plot(compare(fit.stan.4, fit.stan.2))
+compare(fit.stan.3, fit.stan.1)
+#compare(fit.stan.4, fit.stan.2, func = LOO)
+plot(compare(fit.stan.3, fit.stan.1))
 
 ############### new simulated data
 ###############
@@ -203,7 +213,7 @@ simulateOne = function(mu, sigma, nu){
 
 ## sample n values, numerous times
 mDraws.sim = matrix(NA, nrow = nrow(dfData), ncol=300)
-l = extract(fit.stan.2)
+l = extract(fit.stan.1)
 for (i in 1:300){
   p = sample(1:nrow(l$mu), 1)
   mDraws.sim[,i] = simulateOne(l$mu[p,], 
@@ -223,54 +233,55 @@ apply(l$mu[sample(1:nrow(l$mu), 100),], 1, function(x) {
   lines(lowess(x, dfData$values - x), lwd=0.5, col=2)
 })
 
+plot.PCA(oDiag.1, factor(dfMeta$outcome_numeric))
 ## plot the original PCA and replicated data
 plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
-     col=c(1,2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], main='PCA Components - original and simulated',
+     col=rainbow(2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], main='PCA Components - original and simulated',
      xlab='PC1', ylab='PC2')
 points(rowMeans(mDraws.sim)[dfData$ind == 'PC1'], rowMeans(mDraws.sim)[dfData$ind == 'PC2'],
-       col=c(1,2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], pch='1')
+       col=rainbow(2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], pch='1')
 
 plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
-     col=c(1,2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], main='PCA Components - original and model 2',
-     xlab='PC1', ylab='PC2', xlim=c(-4, 4), ylim=c(-3, 4), pch=15)
+     col=rainbow(2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], main='PCA Components - original and model 2',
+     xlab='PC1', ylab='PC2', xlim=c(-4, 4), ylim=c(-3, 3), pch=15)
 
 apply(mDraws.sim, 2, function(x) {
-  points(x[dfData$ind == 'PC1'], x[dfData$ind == 'PC2'],
-         col=c(1,2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], pch=20)
+  points(x[dfData$ind == 'PC1'], x[dfData$ind == 'PC2'], cex=0.5,
+         col=rainbow(2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], pch=20)
 })
+points(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
+       col=rainbow(2)[as.numeric(dfData$fTreatment[dfData$ind == 'PC1'])], pch=15, cex=1.5)
+
 
 ## try a different colour
 plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
-     col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], main='PCA Components - original and model 2',
-     xlab='PC1', ylab='PC2', xlim=c(-4.5, 4.5), ylim=c(-4, 4), pch=15, cex=1.5)
+     col=rainbow(3)[as.numeric(dfData$fBmi[dfData$ind == 'PC1'])], main='PCA Components - original and simulated',
+     xlab='PC1', ylab='PC2')
+points(rowMeans(mDraws.sim)[dfData$ind == 'PC1'], rowMeans(mDraws.sim)[dfData$ind == 'PC2'],
+       col=rainbow(3)[as.numeric(dfData$fBmi[dfData$ind == 'PC1'])], pch='1')
+
+
+plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
+     col=rainbow(3)[as.numeric(dfData$fBmi[dfData$ind == 'PC1'])], main='PCA Components - original and model 2',
+     xlab='PC1', ylab='PC2', xlim=c(-4, 4), ylim=c(-3, 3), pch=15)
 
 apply(mDraws.sim, 2, function(x) {
-  points(x[dfData$ind == 'PC1'], x[dfData$ind == 'PC2'],
-         col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], pch=20, cex=0.3)
+  points(x[dfData$ind == 'PC1'], x[dfData$ind == 'PC2'], cex=0.5,
+         col=rainbow(3)[as.numeric(dfData$fBmi[dfData$ind == 'PC1'])], pch=20)
 })
 
-points(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
-       col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], pch=15, cex=1.5)
+# points(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
+#        col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], pch=15, cex=1.5)
+# 
+# legend('topleft', legend = levels(dfData$fSite), fill=c(1:5))
 
-legend('topleft', legend = levels(dfData$fSite), fill=c(1:5))
-
-# colour the data with the regions covariates
-plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
-     col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], main='PCA Components - original and simulated',
-     xlab='PC1', ylab='PC2', pch=c(10,4)[as.numeric(dfData$fTreatment)[dfData$ind == 'PC1']])
-legend('topleft', legend = c('norm', 'pre'), pch=c(10, 4))
-points(rowMeans(mDraws.sim)[dfData$ind == 'PC1'], rowMeans(mDraws.sim)[dfData$ind == 'PC2'],
-       col=c(1:5)[as.numeric(dfData$fSite[dfData$ind == 'PC1'])], pch='1')
-legend('topright', legend = levels(dfData$fSite), fill=c(1:5))
-
-
-m = cbind(extract(fit.stan.2)$sigmaRan, extract(fit.stan.2)$sigmaPop) 
+m = cbind(extract(fit.stan.3)$sigmaRan, extract(fit.stan.3)$sigmaPop) 
 dim(m)
 m = log(m)
-colnames(m) = c('Treatment', 'Region', 'Residual')
+colnames(m) = c('Preterm', 'Age', 'BMI', 'Residual')
 pairs(m, pch=20, cex=0.5, col='grey')
 
-df = stack(data.frame(m[,-3]))
+df = stack(data.frame(m[,-4]))
 histogram(~ values | ind, data=df, xlab='Log SD', scales=list(relation='free'))
 
 ## calculate bayesian p-value for this test statistic
