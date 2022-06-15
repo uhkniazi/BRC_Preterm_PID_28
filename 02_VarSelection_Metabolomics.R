@@ -211,12 +211,16 @@ colnames(df)
 #matches = Match(Tr=df$fGroups, X = df$propensity, estimand = 'ATE')
 # making sure no duplications as due to smaller sample sizes
 # duplications create over training and correlations between variables
-matches = Match(Tr=df$fGroups, X = as.matrix(fitted(f)), estimand = 'ATT', replace = F)
+#set.seed(123)
+matches = Match(Tr=df$fGroups, X = as.matrix(fitted(f)), estimand = 'ATT', replace = T, ties = T)
 summary(matches)
-iIndex = c(matches$index.treated, matches$index.control)
+iIndex = unique(c(matches$index.treated, matches$index.control))
 table(duplicated(iIndex))
 # save data before unmatched data is dropped
 lData.train.full = lData.train
+f = rep('dropped', times=length(df$fGroups))
+f[iIndex] = 'matched' 
+lData.train.full$covariates$matched = factor(f)
 lData.train$data = lData.train$data[iIndex,]
 lData.train$covariates = lData.train$covariates[iIndex,]
 
@@ -245,7 +249,7 @@ b = barplot(p_outcome_given_age.bmi, beside = F, xaxt='n')
 axis(1, at = b, labels = colnames(p_outcome_given_age.bmi), las=2, cex.axis=0.7,
      tick=F)
 legend('top', legend = c('0', '1'), fill=c('black', 'grey'), xpd=T,
-       horiz=T, inset=c(0, -0.1))
+       horiz=T, inset=c(0, -0.2))
 # df = data.frame(d=lData.train$data[,1], y=lData.train$covariates$fGroups, c=lData.train$covariates$Csite, p=ivPropensity)
 # 
 # ## try some model fits with covariates
@@ -269,7 +273,7 @@ legend('top', legend = c('0', '1'), fill=c('black', 'grey'), xpd=T,
 p.vals = lapply(1:ncol(lData.train$data), function(x){
   df = data.frame(y=lData.train$data[,x], d=lData.train$covariates$fGroups, a=lData.train$covariates$Age_group,
                   b=lData.train$covariates$BMI_group)
-  f = lm(y ~ d + a + b + a:b, data=df)
+  f = lm(y ~ d + a + b, data=df)
   s = summary(f)$coefficients
   return(s['d1', 4])
 })
@@ -316,7 +320,7 @@ plot.var.selection(oVar.r)
 
 ## there does seem to be a difference in the top variables after adjustment
 ######################## Stan section for binomial regression approach
-dfData = data.frame(lData.train$data[,cvTopVariables.lm])
+dfData = data.frame(scale(lData.train$data[,cvTopVariables.lm]))
 dim(dfData)
 dfData$fGroups = lData.train$covariates$fGroups
 table(dfData$fGroups)
@@ -432,12 +436,12 @@ cvTopVariables = cvTopVariables[!(cvTopVariables %in% cvDrop.colinear)]
 dfData = data.frame(lData.train$data[,cvTopVariables])
 dim(dfData)
 fGroups = lData.train$covariates$fGroups
-oVar.sub = CVariableSelection.ReduceModel(dfData, fGroups, boot.num = 500)
+oVar.sub = CVariableSelection.ReduceModel(dfData, fGroups, boot.num = 100)
 plot.var.selection(oVar.sub)
 table(fGroups)
 log(25)
 
-cvVar = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 7)
+cvVar = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 3)
 
 ## there is a small bug as the 2 proteins 590 and 59 have similar prefix
 ## that is why this additional protein is added to the results
@@ -483,7 +487,7 @@ cvVar.names = cvVar
 dfData = cbind(lData.train$data[,cvVar])#, lData.train$covariates[,c(4, 5)])
 head(dfData)
 dim(dfData)
-dfData = data.frame(scale(dfData))
+dfData = data.frame((dfData))
 
 dfData$fGroups = lData.train$covariates$fGroups
 table(dfData$fGroups)
@@ -539,7 +543,7 @@ X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,-(ncol(dfData))]))
 colnames(X) = colnames(mCoef)
 head(X)
 ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
-xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 7 Variables',
+xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 3 Variables',
        ylab='Predicted Probability of Pre-term',
        data=dfData)
 
@@ -553,31 +557,31 @@ compare(f1, f2)
 ## this step requires to refit the model without scaling, as 
 ## data unmatched data is also being used here
 df = data.frame((lData.train.full$data[,colnames(mCoef)[-1]]))
-df$fGroups = lData.train.full$covariates$fGroups
+df$fGroups = lData.train.full$covariates$fGroups:lData.train.full$covariates$matched
 X = as.matrix(cbind(rep(1, times=nrow(df)), df[,-(ncol(df))]))
 colnames(X) = colnames(mCoef)
 head(X)
 ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
-xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 7 Variables',
+xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 3 Variables with Dropped',
        ylab='Predicted Probability of Pre-term',
        data=df)
-## which samples from the control group are not predicted correctly
-iOutliers = which(ivPredict > 0.6 & df$fGroups == '0')
-f = as.numeric(df$fGroups) - 1
-f[iOutliers] = 'outlier'
-f = factor(f, levels = c('0', 'outlier', '1'))
-levels(f)
-
-xyplot(ivPredict ~ f, xlab='Actual Group', main= 'including unmatched outliers',
-       ylab='Predicted Probability of Pre-term',
-       data=df)
-lData.train.full$outlier_index = iOutliers
+# ## which samples from the control group are not predicted correctly
+# iOutliers = which(ivPredict > 0.6 & df$fGroups == '0')
+# f = as.numeric(df$fGroups) - 1
+# f[iOutliers] = 'outlier'
+# f = factor(f, levels = c('0', 'outlier', '1'))
+# levels(f)
+# 
+# xyplot(ivPredict ~ f, xlab='Actual Group', main= 'including unmatched outliers',
+#        ylab='Predicted Probability of Pre-term',
+#        data=df)
+# lData.train.full$outlier_index = iOutliers
 
 ### figures
-# fGroups.jitt = jitter.binary(as.numeric(dfData$fGroups)-1)
-# 
-# plot(dfData$Asparagine, fGroups.jitt, pch=20, xlab='AGR3', ylab='Probability of preterm',
-#      main='Prediction of Preterm')
+fGroups.jitt = jitter.binary(as.numeric(dfData$fGroups)-1)
+
+plot(dfData$Betaine..t., fGroups.jitt, pch=20, xlab='AGR3', ylab='Probability of preterm',
+     main='Prediction of Preterm')
 # x = seq(min(dfData$Asparagine), max(dfData$Asparagine), length.out = 100)
 # m = cbind(1, x, matrix(0, length(x), ncol = 6))
 # c = colMeans(extract(fit.stan)$betas)
