@@ -64,9 +64,30 @@ summary(log(as.vector(mCounts+1)))
 table(log(mCounts+1) <= 1.4) # 3rd quantile
 # data has a lot of zeros - work with binary matrix instead?
 mCounts.orig = mCounts
-mCounts = log(mCounts+1)
+#mCounts = log(mCounts+1)
 mCounts[mCounts > 0] = 1
 range(mCounts)
+
+## variables with most 0s
+ivProb = apply(mCounts, 1, function(inData) {
+  inData[inData < 1] = 0  
+  inData = as.logical(inData)
+  lData = list('success'=sum(inData), fail=sum(!inData))
+  return(mean(rbeta(1000, lData$success + 0.5, lData$fail + 0.5)))
+})
+
+hist(ivProb)
+summary(ivProb)
+quantile(ivProb, 0:10/10)
+table(dfMeta$outcome_numeric)
+0.1 * 25
+i = which(ivProb >= 0.7)
+length(i)
+## try only these variables
+mCounts = mCounts.orig[i, ]
+dim(mCounts)
+
+
 ## some EDA diagnostic plots on the data matrix
 library(downloader)
 url = 'https://raw.githubusercontent.com/uhkniazi/CDiagnosticPlots/experimental/CDiagnosticPlots.R'
@@ -77,7 +98,7 @@ source('CDiagnosticPlots.R')
 # delete the file after source
 unlink('CDiagnosticPlots.R')
 #colnames(mCounts) = as.character(dfMeta$outcome_numeric)
-oDiag.1 = CDiagnosticPlots(mCounts, 'Microbiome Binary')
+oDiag.1 = CDiagnosticPlots(log(mCounts+1), 'Microbiome Log')
 
 # the batch variable we wish to colour by, 
 # this can be any grouping/clustering in the data capture process
@@ -97,10 +118,10 @@ plot.sigma.summary(oDiag.1, fBatch, axis.label.cex = 0.5)
 plot.missing.summary(oDiag.1, fBatch, axis.label.cex = 0.5, cex.main=1)
 ## change parameters 
 l = CDiagnosticPlotsGetParameters(oDiag.1)
-l$PCA.scaleSubjects = F
-l$PCA.scaleVariables = F
-l$HC.scaleSubjects = F
-l$HC.scaleVaribles = F
+# l$PCA.scaleSubjects = F
+# l$PCA.scaleVariables = F
+# l$HC.scaleSubjects = F
+# l$HC.scaleVaribles = F
 l$PCA.jitter = F
 l$HC.jitter = F
 oDiag.1 = CDiagnosticPlotsSetParameters(oDiag.1, l)
