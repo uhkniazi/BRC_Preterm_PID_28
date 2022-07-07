@@ -65,8 +65,8 @@ table(log(mCounts+1) <= 1.4) # 3rd quantile
 # data has a lot of zeros - work with binary matrix instead?
 mCounts.orig = mCounts
 #mCounts = log(mCounts+1)
-mCounts[mCounts > 0] = 1
-range(mCounts)
+# mCounts[mCounts > 0] = 1
+# range(mCounts)
 
 ## variables with most 0s
 ivProb = apply(mCounts, 1, function(inData) {
@@ -98,7 +98,7 @@ source('CDiagnosticPlots.R')
 # delete the file after source
 unlink('CDiagnosticPlots.R')
 #colnames(mCounts) = as.character(dfMeta$outcome_numeric)
-oDiag.1 = CDiagnosticPlots(log(mCounts+1), 'Microbiome Log')
+oDiag.1 = CDiagnosticPlots(log(mCounts+1), 'Microbiome Log 31')
 
 # the batch variable we wish to colour by, 
 # this can be any grouping/clustering in the data capture process
@@ -128,6 +128,16 @@ oDiag.1 = CDiagnosticPlotsSetParameters(oDiag.1, l)
 plot.PCA(oDiag.1, fBatch, cex.main=1, pch = iPch, pch.cex = 1, legend.pos = 'topright')#, csLabels = as.character(dfMeta$fGroups))
 legend('top', legend = c('0', '1'), pch=c(17, 20))
 plot.dendogram(oDiag.1, fBatch, labels_cex = 0.8, cex.main=0.7)
+fOutlier = rep('C1', times=length(fBatch))
+fOutlier[oDiag.1@lData$PCA$x[,1] > 0] = 'C2'
+fOutlier = factor(fOutlier)
+plot.PCA(oDiag.1, fOutlier, cex.main=1, pch = iPch, pch.cex = 1, legend.pos = 'topright')#, csLabels = as.character(dfMeta$fGroups))
+summary(dfMeta[fOutlier == 'C1',])
+summary(dfMeta[fOutlier == 'C2',])
+fBatch = fOutlier
+dfMeta$fOutlier = fOutlier
+xtabs( ~ dfMeta$fOutlier + dfMeta$outcome_numeric)
+
 #ob = calculateExtremeValues(oDiag.1)
 ## extract the PCA components and model the variation
 ######## modelling of PCA components to assign sources of variance to covariates in the design
@@ -153,23 +163,26 @@ str(dfMeta)
 dfData$fTreatment = as.factor(dfMeta$outcome_numeric)
 dfData$fAge = as.factor(dfMeta$Age_group)
 dfData$fBmi = as.factor(dfMeta$BMI_group)
-
+dfData$fOutlier = as.factor(dfMeta$fOutlier)
 densityplot(~ values | ind, groups=fTreatment, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
 densityplot(~ values | ind, groups=fAge, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
 densityplot(~ values | ind, groups=fBmi, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
+densityplot(~ values | ind, groups=fOutlier, data=dfData, auto.key = list(columns=3), scales=list(relation='free'))
+
 densityplot(~ values | ind+fAge, groups=fTreatment, data=dfData, auto.key = list(columns=4), scales=list(relation='free'))
 densityplot(~ values | ind+fBmi, groups=fTreatment, data=dfData, auto.key = list(columns=4), scales=list(relation='free'))
 densityplot(~ values | ind+fBmi+fAge, groups=fTreatment, data=dfData, auto.key = list(columns=4), scales=list(relation='free'))
+densityplot(~ values | ind+fBmi+fAge+fOutlier, groups=fTreatment, data=dfData, auto.key = list(columns=4), scales=list(relation='free'))
 
 # format data for modelling, i.e. create coefficients to estimate
 str(dfData)
 dfData$Coef.1 = factor(dfData$fTreatment:dfData$ind)
-dfData$Coef.2 = factor(dfData$fAge:dfData$ind)
-dfData$Coef.3 = factor(dfData$fBmi:dfData$ind)
+dfData$Coef.2 = factor(dfData$fAge:dfData$fBmi:dfData$ind)
+dfData$Coef.3 = factor(dfData$fOutlier:dfData$ind)
 str(dfData)
 
 fit.lme1 = lmer(values ~ 1  + (1 | Coef.1), data=dfData)
-fit.lme2 = lmer(values ~ 1  + (1 | Coef.1) + (1 | Coef.2), data=dfData)
+fit.lme2 = lmer(values ~ 1  + (1 | Coef.1) + (1 | Coef.3), data=dfData)
 fit.lme3 = lmer(values ~ 1  + (1 | Coef.1) + (1 | Coef.2) + (1 | Coef.3), data=dfData)
 
 anova(fit.lme1, fit.lme2, fit.lme3)
@@ -213,10 +226,10 @@ traceplot(fit.stan.3, 'sigmaPop')
 traceplot(fit.stan.3, 'sigmaRan')
 
 ### model without the sampling related covariates
-m = m1 # cbind(m1, m2)
+m = cbind(m1, m3)
 lStanData = list(Ntotal=nrow(dfData), Ncol=ncol(m), X=m,
-                 NscaleBatches=1, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.1))),
-                                             # rep(2, times=nlevels(dfData$Coef.2))),
+                 NscaleBatches=2, NBatchMap=c(rep(1, times=nlevels(dfData$Coef.1)),
+                                              rep(2, times=nlevels(dfData$Coef.3))),
                  y=dfData$values)
 
 fit.stan.1 = sampling(stanDso, data=lStanData, iter=1000, chains=2, pars=c('betas', 'populationMean', 'sigmaPop', 'sigmaRan',
@@ -289,10 +302,10 @@ points(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'],
 
 ## try a different colour
 plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
-     col=rainbow(3)[as.numeric(dfData$fBmi[dfData$ind == 'PC1'])], main='PCA Components - original and simulated',
+     col=rainbow(2)[as.numeric(dfData$fOutlier[dfData$ind == 'PC1'])], main='PCA Components - original and simulated',
      xlab='PC1', ylab='PC2')
 points(rowMeans(mDraws.sim)[dfData$ind == 'PC1'], rowMeans(mDraws.sim)[dfData$ind == 'PC2'],
-       col=rainbow(3)[as.numeric(dfData$fBmi[dfData$ind == 'PC1'])], pch='1')
+       col=rainbow(2)[as.numeric(dfData$fOutlier[dfData$ind == 'PC1'])], pch='1')
 
 
 plot(dfData$values[dfData$ind == 'PC1'], dfData$values[dfData$ind == 'PC2'], 
@@ -312,7 +325,7 @@ apply(mDraws.sim, 2, function(x) {
 m = cbind(extract(fit.stan.3)$sigmaRan, extract(fit.stan.3)$sigmaPop) 
 dim(m)
 m = log(m)
-colnames(m) = c('Preterm', 'Age', 'BMI', 'Residual')
+colnames(m) = c('Preterm', 'Age:BMI', 'Outlier', 'Residual')
 pairs(m, pch=20, cex=0.5, col='grey')
 
 df = stack(data.frame(m[,-4]))
