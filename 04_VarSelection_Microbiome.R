@@ -28,7 +28,7 @@ range(mCounts)
 
 ## variables with most 0s
 ivProb = apply(mCounts, 1, function(inData) {
-  inData[inData < 1] = 0  
+  inData[inData < 1] = 0
   inData = as.logical(inData)
   lData = list('success'=sum(inData), fail=sum(!inData))
   return(mean(rbeta(1000, lData$success + 0.5, lData$fail + 0.5)))
@@ -38,14 +38,18 @@ hist(ivProb)
 summary(ivProb)
 quantile(ivProb, 0:10/10)
 table(dfMeta$outcome_numeric)
+25/(58+25)
+
 0.1 * 25
-i = which(ivProb >= 0.7)
+i = which(ivProb >= 0.3)
 length(i)
-## try only these variables
-mCounts = mCounts.orig[i, ]
 dim(mCounts)
-range(mCounts)
-mCounts = log(mCounts+1)
+mCounts = mCounts[i,]
+# ## try only these variables
+# mCounts = mCounts.orig[i, ]
+# dim(mCounts)
+# range(mCounts)
+# mCounts = log(mCounts+1)
 lData.train = list(data=t(mCounts), covariates=dfMeta)
 
 # additional variable to map the sample numbers as 
@@ -280,9 +284,10 @@ lData.train$covariates$Age_group = factor(lData.train$covariates$Age_group)
 lData.train$covariates$BMI_group = factor(lData.train$covariates$BMI_group)
 # ## select variables showing average difference
 # p.vals = lapply(1:ncol(lData.train$data), function(x){
-#   df = data.frame(y=lData.train$data[,x], d=lData.train$covariates$fGroups, a=lData.train$covariates$Age_group,
-#                   b=lData.train$covariates$BMI_group)
-#   f = lm(y ~ d + a + b, data=df)
+#   df = data.frame(y=jitter.binary(lData.train$data[,'Prevotella_oris']), d=lData.train$covariates$fGroups, a=lData.train$covariates$Age_group,
+#                   b=lData.train$covariates$BMI_group, 
+#                   c = lData.train$covariates$fCluster)
+#   f = lm(y ~ d + a + b + c, data=df)
 #   s = summary(f)$coefficients
 #   return(s['d1', 4])
 # })
@@ -294,7 +299,8 @@ lData.train$covariates$BMI_group = factor(lData.train$covariates$BMI_group)
 # dfPvals = data.frame(dfPvals)
 # f = which(dfPvals$pvalue < 0.1)
 # length(f)
-
+# 
+# cvTopVariables.lm = rownames(dfPvals)[f]
 cvTopVariables.lm = colnames(lData.train$data)
 
 if(!require(downloader) || !require(methods)) stop('Library downloader and methods required')
@@ -315,13 +321,13 @@ dim(dfData)
 levels(fGroups)
 xtabs(~ fGroups + fCluster)
 
-oVar.r = CVariableSelection.RandomForest(dfData, fGroups, boot.num = 100)
+oVar.r = CVariableSelection.RandomForest(dfData, fGroups, boot.num = 100, big.warn = F)
 plot.var.selection(oVar.r)
 
-oVar.r.c1 = CVariableSelection.RandomForest(dfData[fCluster == 'C1',], fGroups[fCluster == 'C1'], boot.num = 100)
+oVar.r.c1 = CVariableSelection.RandomForest(dfData[fCluster == 'C1',], fGroups[fCluster == 'C1'], boot.num = 100, big.warn = F)
 plot.var.selection(oVar.r.c1)
 
-oVar.r.c2 = CVariableSelection.RandomForest(dfData[fCluster == 'C2',], fGroups[fCluster == 'C2'], boot.num = 100)
+oVar.r.c2 = CVariableSelection.RandomForest(dfData[fCluster == 'C2',], fGroups[fCluster == 'C2'], boot.num = 100, big.warn = F)
 plot.var.selection(oVar.r.c2)
 
 
@@ -344,9 +350,9 @@ dfData = data.frame(lData.train$data[,cvTopVariables.lm])
 dim(dfData)
 head(dfData)
 dfData$fGroups = lData.train$covariates$fGroups
-#dfData$fCluster = as.numeric(lData.train$covariates$fCluster)-1
-fCluster = lData.train$covariates$fCluster
-dfData = dfData[fCluster == 'C2',]
+dfData$fCluster = as.numeric(lData.train$covariates$fCluster)-1
+#fCluster = lData.train$covariates$fCluster
+#dfData = dfData[fCluster == 'C2',]
 table(dfData$fGroups)
 dim(dfData)
 rm(fGroups)
@@ -398,12 +404,13 @@ m = abs(colMeans(mCoef))
 m = sort(m, decreasing = T)
 
 l2 = barplot(m[1:20], 
-             las=2, xaxt='n', col='grey', main='Top Variables - binomial (C2)')
+             las=2, xaxt='n', col='grey', main='Top Variables - binomial')
 axis(1, at = l2, labels = names(m)[1:20], tick = F, las=2, cex.axis=0.6 )
 
-# cvTopVariables.bin.full = names(m)[1:10]
+plot(ct.1, pars=names(m)[1:20])
+cvTopVariables.bin.full = names(m)[1:20]
 # cvTopVariables.bin.C1 = names(m)[1:10]
-cvTopVariables.bin.C2 = names(m)[1:10]
+# cvTopVariables.bin.C2 = names(m)[1:10]
 
 ### predictive performance of the model
 ## binomial prediction
@@ -434,19 +441,23 @@ xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial',
        data=dfData)
 
 fit.stan.full = fit.stan
-fit.stan.C1 = fit.stan
-fit.stan.C2 = fit.stan 
+# fit.stan.C1 = fit.stan
+# fit.stan.C2 = fit.stan 
 
 # ## find correlated variables
 dfData.bk = dfData
 dim(dfData)
-mData = as.matrix(dfData[,-32])
+mData = t(mCounts[cvTopVariables.lm,])#as.matrix(dfData[,-230])
+dim(mData)
+s = apply(mData, 2, sd)
+table( s == 0)
+mData = mData[,-(which(s == 0))]
 length(as.vector(mData))
 mCor = cor(mData, use="na.or.complete")
 library(caret)
 image(mCor)
 ### find the columns that are correlated and should be removed
-n = findCorrelation((mCor), cutoff = 0.8, names=T)
+n = findCorrelation((mCor), cutoff = 0.7, names=T)
 # data.frame(n)
 # # sapply(n, function(x) {
 # #   (abs(mCor[,x]) >= 0.7)
@@ -461,13 +472,13 @@ cvDrop.colinear = n
 
 cvTopVariables.rf = rownames(CVariableSelection.RandomForest.getVariables(oVar.r))[1:10]
 cvTopVariables.rf = c(cvTopVariables.rf, rownames(CVariableSelection.RandomForest.getVariables(oVar.r.c1))[1:10])
-cvTopVariables.rf = c(cvTopVariables.rf, rownames(CVariableSelection.RandomForest.getVariables(oVar.r.c2))[1:6])
+cvTopVariables.rf = c(cvTopVariables.rf, rownames(CVariableSelection.RandomForest.getVariables(oVar.r.c2))[1:10])
 cvTopVariables.rf = unique(cvTopVariables.rf)
 length(cvTopVariables.rf)
 
 
 # cvTopVariables.bin = names(m)[1:20]
-cvTopVariables.bin = unique(c(cvTopVariables.bin.full, cvTopVariables.bin.C1, cvTopVariables.bin.C2))
+cvTopVariables.bin = cvTopVariables.bin.full# unique(c(cvTopVariables.bin.full, cvTopVariables.bin.C1, cvTopVariables.bin.C2))
 length(cvTopVariables.bin)
 table(cvTopVariables.bin %in% cvTopVariables.rf)
 cvTopVariables = unique(c(cvTopVariables.rf, cvTopVariables.bin))
@@ -478,24 +489,24 @@ dfData = data.frame(lData.train$data[,cvTopVariables])
 dim(dfData)
 fGroups = lData.train$covariates$fGroups
 fCluster = lData.train$covariates$fCluster
-oVar.sub = CVariableSelection.ReduceModel(dfData, fGroups, boot.num = 100)
+oVar.sub = CVariableSelection.ReduceModel(dfData, fGroups, boot.num = 10)
 plot.var.selection(oVar.sub)
 table(fGroups)
 log(25)
-cvVar.full = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 2)
+cvVar.full = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 3)
 
-oVar.sub.C1 = CVariableSelection.ReduceModel(dfData[fCluster == 'C1',], fGroups[fCluster == 'C1'], boot.num = 100)
-plot.var.selection(oVar.sub.C1)
-table(fGroups[fCluster == 'C1'])
-log(12)
-cvVar.C1 = CVariableSelection.ReduceModel.getMinModel(oVar.sub.C1, size = 2)
-
-oVar.sub.C2 = CVariableSelection.ReduceModel(dfData[fCluster == 'C2',], fGroups[fCluster == 'C2'], boot.num = 100)
-plot.var.selection(oVar.sub.C2)
-table(fGroups[fCluster == 'C2'])
-log(13)
-cvVar.C2 = CVariableSelection.ReduceModel.getMinModel(oVar.sub.C2, size = 1)
-cvVar = unique(c(cvVar.full, cvVar.C1, cvVar.C2))
+# oVar.sub.C1 = CVariableSelection.ReduceModel(dfData[fCluster == 'C1',], fGroups[fCluster == 'C1'], boot.num = 100)
+# plot.var.selection(oVar.sub.C1)
+# table(fGroups[fCluster == 'C1'])
+# log(12)
+# cvVar.C1 = CVariableSelection.ReduceModel.getMinModel(oVar.sub.C1, size = 2)
+# 
+# oVar.sub.C2 = CVariableSelection.ReduceModel(dfData[fCluster == 'C2',], fGroups[fCluster == 'C2'], boot.num = 100)
+# plot.var.selection(oVar.sub.C2)
+# table(fGroups[fCluster == 'C2'])
+# log(13)
+# cvVar.C2 = CVariableSelection.ReduceModel.getMinModel(oVar.sub.C2, size = 1)
+cvVar = cvVar.full #unique(c(cvVar.full, cvVar.C1, cvVar.C2))
 length(cvVar)
 ## there is a small bug as the 2 proteins 590 and 59 have similar prefix
 ## that is why this additional protein is added to the results
@@ -643,7 +654,7 @@ colnames(mCoef) = c('Intercept', colnames(lData$mModMatrix)[2:ncol(lData$mModMat
 ## get the predicted values
 ## create model matrix
 head(dfData)
-X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,-5]))
+X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,-4]))
 colnames(X) = colnames(mCoef)
 head(X)
 ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
