@@ -41,10 +41,25 @@ table(dfMeta$outcome_numeric)
 25/(58+25)
 
 0.1 * 25
+## use a binary matrix for lower expressed variables
 i = which(ivProb >= 0.3)
 length(i)
 dim(mCounts)
 mCounts = mCounts[i,]
+
+## use original values for the highly expressed variables
+i = which(ivProb >= 0.9)
+length(i)
+i = names(i)
+dim(mCounts.orig)
+m = mCounts.orig[i,]
+head(m); dim(m)
+m = log(m+1)
+range(m)
+dim(mCounts)
+mCounts[i,] = m[i,]
+range(mCounts)
+
 # ## try only these variables
 # mCounts = mCounts.orig[i, ]
 # dim(mCounts)
@@ -447,11 +462,12 @@ fit.stan.full = fit.stan
 # ## find correlated variables
 dfData.bk = dfData
 dim(dfData)
+length(cvTopVariables.lm)
 mData = t(mCounts[cvTopVariables.lm,])#as.matrix(dfData[,-230])
 dim(mData)
 s = apply(mData, 2, sd)
 table( s == 0)
-mData = mData[,-(which(s == 0))]
+#mData = mData[,-(which(s == 0))]
 length(as.vector(mData))
 mCor = cor(mData, use="na.or.complete")
 library(caret)
@@ -470,10 +486,10 @@ n = findCorrelation((mCor), cutoff = 0.7, names=T)
 #cvDrop.colinear = names(n[(sapply(n, length) > 2)])
 cvDrop.colinear = n
 
-cvTopVariables.rf = rownames(CVariableSelection.RandomForest.getVariables(oVar.r))[1:10]
-cvTopVariables.rf = c(cvTopVariables.rf, rownames(CVariableSelection.RandomForest.getVariables(oVar.r.c1))[1:10])
-cvTopVariables.rf = c(cvTopVariables.rf, rownames(CVariableSelection.RandomForest.getVariables(oVar.r.c2))[1:10])
-cvTopVariables.rf = unique(cvTopVariables.rf)
+cvTopVariables.rf = rownames(CVariableSelection.RandomForest.getVariables(oVar.r))[1:20]
+#cvTopVariables.rf = c(cvTopVariables.rf, rownames(CVariableSelection.RandomForest.getVariables(oVar.r.c1))[1:10])
+#cvTopVariables.rf = c(cvTopVariables.rf, rownames(CVariableSelection.RandomForest.getVariables(oVar.r.c2))[1:10])
+#cvTopVariables.rf = unique(cvTopVariables.rf)
 length(cvTopVariables.rf)
 
 
@@ -489,11 +505,11 @@ dfData = data.frame(lData.train$data[,cvTopVariables])
 dim(dfData)
 fGroups = lData.train$covariates$fGroups
 fCluster = lData.train$covariates$fCluster
-oVar.sub = CVariableSelection.ReduceModel(dfData, fGroups, boot.num = 10)
+oVar.sub = CVariableSelection.ReduceModel(dfData, fGroups, boot.num = 100)
 plot.var.selection(oVar.sub)
 table(fGroups)
 log(25)
-cvVar.full = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 3)
+cvVar.full = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 14)
 
 # oVar.sub.C1 = CVariableSelection.ReduceModel(dfData[fCluster == 'C1',], fGroups[fCluster == 'C1'], boot.num = 100)
 # plot.var.selection(oVar.sub.C1)
@@ -528,30 +544,30 @@ oCV.lda = CCrossValidation.LDA(dfData[,cvVar], dfData[,cvVar], fGroups, fGroups,
 
 plot.cv.performance(oCV.lda)
 
-### repeat on subset clusters
-dfData = data.frame(lData.train$data[,cvVar.C1])
-fGroups = lData.train$covariates$fGroups
-levels(fGroups)
-table(fGroups[fCluster == 'C1'])
-head(dfData)
-# cross validation
-oCV.lda.C1 = CCrossValidation.LDA(dfData[fCluster == 'C1',], dfData[fCluster == 'C1',],
-                                  fGroups[fCluster == 'C1'], fGroups[fCluster == 'C1'], level.predict = '1',
-                               boot.num = 100, k.fold = 10) 
-
-plot.cv.performance(oCV.lda.C1)
-
-dfData = data.frame(v1 = lData.train$data[,cvVar.C2])
-fGroups = lData.train$covariates$fGroups
-levels(fGroups)
-table(fGroups[fCluster == 'C2'])
-head(dfData)
-# cross validation
-oCV.lda.C2 = CCrossValidation.LDA(data.frame(v1=dfData[fCluster == 'C2',]), data.frame(v1=dfData[fCluster == 'C2',]),
-                                  fGroups[fCluster == 'C2'], fGroups[fCluster == 'C2'], level.predict = '1',
-                                  boot.num = 100, k.fold = 10) 
-
-plot.cv.performance(oCV.lda.C2)
+# ### repeat on subset clusters
+# # dfData = data.frame(lData.train$data[,cvVar])
+# # fGroups = lData.train$covariates$fGroups
+# # levels(fGroups)
+# table(fGroups[fCluster == 'C1'])
+# head(dfData)
+# # cross validation
+# oCV.lda.C1 = CCrossValidation.LDA(dfData[fCluster == 'C1',], dfData[fCluster == 'C1',],
+#                                   fGroups[fCluster == 'C1'], fGroups[fCluster == 'C1'], level.predict = '1',
+#                                boot.num = 100, k.fold = 2) 
+# 
+# plot.cv.performance(oCV.lda.C1)
+# 
+# dfData = data.frame(v1 = lData.train$data[,cvVar.C2])
+# fGroups = lData.train$covariates$fGroups
+# levels(fGroups)
+# table(fGroups[fCluster == 'C2'])
+# head(dfData)
+# # cross validation
+# oCV.lda.C2 = CCrossValidation.LDA(data.frame(v1=dfData[fCluster == 'C2',]), data.frame(v1=dfData[fCluster == 'C2',]),
+#                                   fGroups[fCluster == 'C2'], fGroups[fCluster == 'C2'], level.predict = '1',
+#                                   boot.num = 100, k.fold = 10) 
+# 
+# plot.cv.performance(oCV.lda.C2)
 
 
 ## use the full data as test data
@@ -577,10 +593,42 @@ plot.cv.performance(oCV.lda)
 ## names of these proteins
 cvVar.names = cvVar
 
+######################################################################
+## binomial regression and cross-validation using stan instead of LDA
+######################################################################
+rm(stanDso)
+url = 'https://raw.githubusercontent.com/uhkniazi/CCrossValidation/experimental/bernoulli.stan'
+download(url, 'bernoulli.stan')
+
+dfData = data.frame(lData.train$data[,cvVar])
+fGroups = lData.train$covariates$fGroups
+levels(fGroups)
+table(fGroups)
+
+dfData.test = data.frame(lData.train.full$data[,cvVar])
+fGroups.test = lData.train.full$covariates$fGroups
+dim(dfData.test)
+table(fGroups.test)
+
+
+oCV.s = CCrossValidation.StanBern(train.dat = dfData, 
+                                  test.dat = dfData.test, 
+                                  test.groups = fGroups.test, 
+                                  train.groups = fGroups,
+                                  level.predict = '1',
+                                  boot.num = 10, k.fold = 10, 
+                                  ncores = 2, nchains = 2) 
+
+save(oCV.s, file='temp/oCV.s.rds')
+
+plot.cv.performance(oCV.s)
+unlink('bernoulli.stan')
+unlink('bernoulli.rds')
+
 ########################################################################
 ## refit the binomial model and make some figures
 ########################################################################
-dfData = cbind(lData.train$data[,cvVar])#, lData.train$covariates[,c(4, 5)])
+dfData = cbind(lData.train$data[,cvVar.names])#, lData.train$covariates[,c(4, 5)])
 head(dfData)
 dim(dfData)
 dfData = data.frame((dfData))
@@ -596,7 +644,7 @@ xyplot(values ~ fCluster:fGroups | ind, groups=fCluster, data=dfData, auto.key =
 # bwplot(Streptococcus_pseudoporcinus ~ fGroups | fCluster, data=dfData, panel=function(x, y, ...) panel.bwplot(x, y, pch='|',...), type='b',
 #        par.strip.text=list(cex=0.7), varwidth=T, main='Streptococcus_pseudoporcinus')
 
-dfData = cbind(lData.train$data[,cvVar])#, lData.train$covariates[,c(4, 5)])
+dfData = cbind(lData.train$data[,cvVar.names])#, lData.train$covariates[,c(4, 5)])
 head(dfData)
 dim(dfData)
 dfData = data.frame((dfData))
@@ -611,7 +659,7 @@ levels(dfData$fGroups)
 head(dfData)
 lData = list(resp=ifelse(dfData$fGroups == '1', 1, 0), mModMatrix=model.matrix(fGroups ~ 1 + ., data=dfData))
 
-stanDso = rstan::stan_model(file='binomialRegression.stan')
+stanDso = rstan::stan_model(file='binomialRegressionGuessMixture.stan')
 
 lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData$mModMatrix,
                  y=lData$resp)
@@ -622,12 +670,12 @@ lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData
 # }
 
 
-fit.stan = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('betas', 'log_lik'), cores=4,# init=initf,
+fit.stan = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('betas', 'log_lik', 'guess'), cores=4,# init=initf,
                     control=list(adapt_delta=0.99, max_treedepth = 13))
 
 # save(fit.stan, file='temp/fit.stan.binom_preterm_met.rds')
 
-print(fit.stan, c('betas'))#, 'guess'))
+print(fit.stan, c('betas', 'guess'))
 # print(fit.stan, 'tau')
 # traceplot(fit.stan, 'tau')
 
@@ -654,7 +702,8 @@ colnames(mCoef) = c('Intercept', colnames(lData$mModMatrix)[2:ncol(lData$mModMat
 ## get the predicted values
 ## create model matrix
 head(dfData)
-X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,-4]))
+ncol(dfData)
+X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,-15]))
 colnames(X) = colnames(mCoef)
 head(X)
 ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
@@ -662,19 +711,21 @@ xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 3 Variables',
        ylab='Predicted Probability of Pre-term',
        data=dfData)
 
-f1 = fit.stan # with cluster
-f2 = fit.stan # without cluster
+f1 = fit.stan # without guess
+f2 = fit.stan # with guess
 ## go back to refit with less number of variables
 plot(compare(f1, f2))
 compare(f1, f2)
-## model without cluster identifier appears to be better as it has minimal effect in this case
+## model without guess parameter appears to be better as it has minimal effect in this case
 ## remake figure with full data
 ## this step requires to refit the model without scaling, as 
 ## data unmatched data is also being used here
+fit.stan = f1
 df = data.frame((lData.train.full$data[,colnames(mCoef)[-1]]))
 df$fGroups = lData.train.full$covariates$fGroups:lData.train.full$covariates$matched
 head(df)
-X = as.matrix(cbind(rep(1, times=nrow(df)), df[,-5]))
+ncol(df)
+X = as.matrix(cbind(rep(1, times=nrow(df)), df[,-15]))
 colnames(X) = colnames(mCoef)
 head(X)
 ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
@@ -700,7 +751,7 @@ colnames(dfData)
 plot(dfData$Gardnerella_vaginalis, fGroups.jitt, pch=20, xlab='Gardnerella_vaginalis', ylab='Probability of preterm',
      main='Prediction of Preterm')
 x = seq(min(dfData$Gardnerella_vaginalis), max(dfData$Gardnerella_vaginalis), length.out = 100)
-m = cbind(1, matrix(colMeans(dfData[,-5]), nrow = length(x), ncol = 4, byrow = T))
+m = cbind(1, matrix(colMeans(dfData[,-15]), nrow = length(x), ncol = 14, byrow = T))
 m[,2] = x
 c = colMeans(extract(fit.stan)$betas)
 lines(x, plogis(m %*% c), col='black')
@@ -711,31 +762,42 @@ lines(x, plogis(m %*% c), col='black')
 # legend('left', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
 
 colnames(dfData)
-plot(dfData$Streptococcus_pseudoporcinus, fGroups.jitt, pch=20, xlab='Streptococcus_pseudoporcinus', ylab='Probability of preterm',
+plot(dfData$Streptococcus_urinalis, fGroups.jitt, pch=20, xlab='Strep uri', ylab='Probability of preterm',
      main='Prediction of Preterm')
-x = seq(min(dfData$Streptococcus_pseudoporcinus), max(dfData$Streptococcus_pseudoporcinus), length.out = 100)
-m = cbind(1, matrix(colMeans(dfData[,-5]), nrow = length(x), ncol = 4, byrow = T))
-m[,3] = x
-c = colMeans(extract(fit.stan)$betas)
-lines(x, plogis(m %*% c), col='black')
-
-colnames(dfData)
-plot(dfData$Dialister_micraerophilus, fGroups.jitt, pch=20, xlab='Dialister_micraerophilus', ylab='Probability of preterm',
-     main='Prediction of Preterm')
-x = seq(min(dfData$Dialister_micraerophilus), max(dfData$Dialister_micraerophilus), length.out = 100)
-m = cbind(1, matrix(colMeans(dfData[,-5]), nrow = length(x), ncol = 4, byrow = T))
+x = seq(min(dfData$Propionibacterium_sp.), max(dfData$Propionibacterium_sp.), length.out = 100)
+m = cbind(1, matrix(colMeans(dfData[,-15]), nrow = length(x), ncol = 14, byrow = T))
 m[,4] = x
 c = colMeans(extract(fit.stan)$betas)
 lines(x, plogis(m %*% c), col='black')
 
 colnames(dfData)
-plot(dfData$Propionibacterium_sp., fGroups.jitt, pch=20, xlab='Propionibacterium_sp.', ylab='Probability of preterm',
+plot(dfData$BVAB1, fGroups.jitt, pch=20, xlab='BVAB1', ylab='Probability of preterm',
      main='Prediction of Preterm')
-x = seq(min(dfData$Propionibacterium_sp.), max(dfData$Propionibacterium_sp.), length.out = 100)
-m = cbind(1, matrix(colMeans(dfData[,-5]), nrow = length(x), ncol = 4, byrow = T))
-m[,5] = x
+x = seq(min(dfData$BVAB1), max(dfData$BVAB1), length.out = 100)
+m = cbind(1, matrix(colMeans(dfData[,-15]), nrow = length(x), ncol = 14, byrow = T))
+m[,3] = x
 c = colMeans(extract(fit.stan)$betas)
 lines(x, plogis(m %*% c), col='black')
+
+
+
+# colnames(dfData)
+# plot(dfData$Dialister_micraerophilus, fGroups.jitt, pch=20, xlab='Dialister_micraerophilus', ylab='Probability of preterm',
+#      main='Prediction of Preterm')
+# x = seq(min(dfData$Dialister_micraerophilus), max(dfData$Dialister_micraerophilus), length.out = 100)
+# m = cbind(1, matrix(colMeans(dfData[,-5]), nrow = length(x), ncol = 4, byrow = T))
+# m[,4] = x
+# c = colMeans(extract(fit.stan)$betas)
+# lines(x, plogis(m %*% c), col='black')
+# 
+# colnames(dfData)
+# plot(dfData$Propionibacterium_sp., fGroups.jitt, pch=20, xlab='Propionibacterium_sp.', ylab='Probability of preterm',
+#      main='Prediction of Preterm')
+# x = seq(min(dfData$Propionibacterium_sp.), max(dfData$Propionibacterium_sp.), length.out = 100)
+# m = cbind(1, matrix(colMeans(dfData[,-5]), nrow = length(x), ncol = 4, byrow = T))
+# m[,5] = x
+# c = colMeans(extract(fit.stan)$betas)
+# lines(x, plogis(m %*% c), col='black')
 
 
 # #########################################################################
