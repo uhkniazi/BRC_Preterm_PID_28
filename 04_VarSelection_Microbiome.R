@@ -34,7 +34,7 @@ ivProb = apply(mCounts, 1, function(inData) {
   return(mean(rbeta(1000, lData$success + 0.5, lData$fail + 0.5)))
 })
 
-hist(ivProb)
+hist(ivProb, main='Proportion of non-zeros in each variable', xlab='')
 summary(ivProb)
 quantile(ivProb, 0:10/10)
 table(dfMeta$outcome_numeric)
@@ -58,6 +58,7 @@ head(m); dim(m)
 m = log(m+1)
 range(m)
 dim(mCounts)
+range(mCounts)
 mCounts[i,] = m[i,]
 range(mCounts)
 
@@ -92,7 +93,7 @@ plot(density(ivPropensity))
 lData.train$propensity = ivPropensity
 fG = lData.train$covariates$fGroups
 hist2(ivPropensity[fG=='1'], 
-      ivPropensity[fG=='0'], legends = c('pr', 'n'))
+      ivPropensity[fG=='0'], legends = c('pr', 'n'), main = 'Before Matching', xlab='Propensity')
 
 ## as there is no overlap, use the covariates only in overlapping areas
 ## use the matching library
@@ -134,7 +135,7 @@ summary(f)
 ivPropensity = fitted(f)
 fG = lData.train$covariates$fGroups
 hist2(ivPropensity[fG=='1'], 
-      ivPropensity[fG=='0'], legends = c('pr', 'n'))
+      ivPropensity[fG=='0'], legends = c('pr', 'n'), main='After matching', xlab='Propensity')
 
 
 str(lData.train$covariates)
@@ -266,7 +267,7 @@ m = sort(m, decreasing = T)
 
 l2 = barplot(m[1:20], 
              las=2, xaxt='n', col='grey', main='Top Variables - binomial')
-axis(1, at = l2, labels = names(m)[1:20], tick = F, las=2, cex.axis=0.6 )
+axis(1, at = l2, labels = names(m)[1:20], tick = F, las=2, cex.axis=0.8 )
 
 plot(ct.1, pars=names(m)[1:20])
 cvTopVariables.bin.full = names(m)[1:20]
@@ -492,7 +493,7 @@ levels(dfData$fGroups)
 head(dfData)
 lData = list(resp=ifelse(dfData$fGroups == '1', 1, 0), mModMatrix=model.matrix(fGroups ~ 1 + ., data=dfData))
 
-stanDso = rstan::stan_model(file='binomialRegressionGuessMixture.stan')
+stanDso = rstan::stan_model(file='binomialRegression.stan')
 
 lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData$mModMatrix,
                  y=lData$resp)
@@ -503,12 +504,12 @@ lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData
 # }
 
 
-fit.stan = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('betas', 'log_lik', 'guess'), cores=4,# init=initf,
+fit.stan = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('betas', 'log_lik'), cores=4,# init=initf,
                     control=list(adapt_delta=0.99, max_treedepth = 13))
 
 # save(fit.stan, file='temp/fit.stan.binom_preterm_met.rds')
 
-print(fit.stan, c('betas', 'guess'))
+print(fit.stan, c('betas'))#, 'guess'))
 # print(fit.stan, 'tau')
 # traceplot(fit.stan, 'tau')
 
@@ -519,6 +520,11 @@ dim(mCoef)
 iIntercept = mCoef[,1]
 mCoef = mCoef[,-1]
 colnames(mCoef) = colnames(lData$mModMatrix)[2:ncol(lData$mModMatrix)]
+
+## correlation of coefficients
+mCor = cor(mCoef)
+dim(mCor)
+heatmap(abs(mCor), Rowv = NA, Colv = NA, symm = T, scale = 'none', cexRow = 1, cexCol = 1)
 
 ## coeftab object 
 ct.1 = coeftab(fit.stan)
@@ -536,16 +542,16 @@ colnames(mCoef) = c('Intercept', colnames(lData$mModMatrix)[2:ncol(lData$mModMat
 ## create model matrix
 head(dfData)
 ncol(dfData)
-X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,-15]))
+X = as.matrix(cbind(rep(1, times=nrow(dfData)), dfData[,-11]))
 colnames(X) = colnames(mCoef)
 head(X)
 ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
-xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 3 Variables',
+xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 10 Variables',
        ylab='Predicted Probability of Pre-term',
        data=dfData)
 
 f1 = fit.stan # without guess
-f2 = fit.stan # with guess
+# f2 = fit.stan # with guess
 ## go back to refit with less number of variables
 plot(compare(f1, f2))
 compare(f1, f2)
@@ -558,15 +564,17 @@ df = data.frame((lData.train.full$data[,colnames(mCoef)[-1]]))
 df$fGroups = lData.train.full$covariates$fGroups:lData.train.full$covariates$matched
 head(df)
 ncol(df)
-X = as.matrix(cbind(rep(1, times=nrow(df)), df[,-15]))
+X = as.matrix(cbind(rep(1, times=nrow(df)), df[,-11]))
 colnames(X) = colnames(mCoef)
 head(X)
 ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
-xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 4 Variables with Dropped',
+xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 10 Variables with Unmatched',
        ylab='Predicted Probability of Pre-term',
        data=df)
-# ## which samples from the control group are not predicted correctly
-# iOutliers = which(ivPredict > 0.6 & df$fGroups == '0')
+## which samples from the control group are not predicted correctly
+iOutliers = which(ivPredict > 0.6 & df$fGroups == '0:dropped')
+df = lData.train.full$covariates[iOutliers,]
+
 # f = as.numeric(df$fGroups) - 1
 # f[iOutliers] = 'outlier'
 # f = factor(f, levels = c('0', 'outlier', '1'))
