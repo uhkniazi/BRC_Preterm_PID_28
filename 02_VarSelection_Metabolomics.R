@@ -1,7 +1,7 @@
 # File: 02_VarSelection_Metabolomics.R
 # Auth: umar.niazi@kcl.ac.uk
-# Date: 13/06/2022
-# Desc: variable selection for metabolomics data
+# Date: 3/8/2022
+# Desc: variable selection for updated metabolomics data
 
 #### data loading and formatting
 source('header.R')
@@ -11,17 +11,18 @@ dfMeta = read.csv(file.choose(), header=T, stringsAsFactors = T)
 dfData = read.csv(file.choose(), header=T)
 rownames(dfMeta) = 1:nrow(dfMeta)
 rownames(dfData) = 1:nrow(dfMeta)
-## drop sample 26 after first pass analysis
-## as expression levels are very different to the rest of the samples
-dfMeta = dfMeta[-26,]
-dfData = dfData[-26,]
+table(is.na(dfMeta))
+table(is.na(dfData))
+str(dfMeta)
 # one sample is missing a metadata info, remove that
 which(dfMeta$BMI_group == '')
-dfMeta = dfMeta[-51,]
-dfData = dfData[-51,]
+dfMeta = dfMeta[-52,]
+dfData = dfData[-52,]
 identical(rownames(dfMeta), rownames(dfData))
 dfMeta = droplevels.data.frame(dfMeta)
-
+dfMeta$outcome_numeric = ifelse(dfMeta$outcome == 'TERM', 0, 1)
+colnames(dfMeta)
+dfMeta = dfMeta[,c(6, 3, 5)]
 str(dfMeta)
 
 ## some acrobatics to check data matrix
@@ -34,17 +35,17 @@ range(mCounts)
 f = apply(mCounts, 2, is.na)
 f2 = rowSums(f)
 table(f2)
-# it appears some rows are NA i.e. proteins not detected? or data absent
-f = mCounts[which(f2 > 0), ]
-f[,1:10]
+# # it appears some rows are NA i.e. proteins not detected? or data absent
+# f = mCounts[which(f2 > 0), ]
+# f[,1:10]
 dim(mCounts); dim(na.omit(mCounts))
-mCounts = na.omit(mCounts)
+# mCounts = na.omit(mCounts)
 range(mCounts)
 plot(density(mCounts))
-## try a logit transformation of the data to add more dynamic range
-library(car)
-plot(density(logit(mCounts)))
-mCounts = logit(mCounts)
+table(mCounts == 0)
+## try a log transformation of the data to add more dynamic range
+plot(density(log(mCounts+1)))
+mCounts = log(mCounts+1)
 
 ### reduce the number of variables with various steps
 ## remove variables with 0 sd i.e. not changing 

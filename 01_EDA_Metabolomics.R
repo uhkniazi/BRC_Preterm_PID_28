@@ -2,7 +2,7 @@
 # Auth: umar.niazi@kcl.ac.uk
 # Date: 7/6/2022
 # Desc: exploratory analysis for the metabolomics
-
+# https://homepages.inf.ed.ac.uk/rbf/HIPR2/pixexp.htm
 source('header.R')
 
 # load the data
