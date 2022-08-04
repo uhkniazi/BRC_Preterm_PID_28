@@ -1,25 +1,73 @@
 # File: 01_EDA_Metabolomics.R
 # Auth: umar.niazi@kcl.ac.uk
-# Date: 7/6/2022
-# Desc: exploratory analysis for the metabolomics
-# https://homepages.inf.ed.ac.uk/rbf/HIPR2/pixexp.htm
+# Date: 4/8/2022
+# Desc: exploratory analysis for the metabolomics using updated data
+
 source('header.R')
 
-# load the data
-dfMeta = read.csv(file.choose(), header=T)
+dfMeta = read.csv(file.choose(), header=T, stringsAsFactors = T)
 dfData = read.csv(file.choose(), header=T)
 rownames(dfMeta) = 1:nrow(dfMeta)
 rownames(dfData) = 1:nrow(dfMeta)
-## drop sample 26 after first pass analysis
-## as expression levels are very different to the rest of the samples
-dfMeta = dfMeta[-26,]
-dfData = dfData[-26,]
+table(is.na(dfMeta))
+table(is.na(dfData))
+str(dfMeta)
 # one sample is missing a metadata info, remove that
 which(dfMeta$BMI_group == '')
-dfMeta = dfMeta[-51,]
-dfData = dfData[-51,]
+dfMeta = dfMeta[-52,]
+dfData = dfData[-52,]
 identical(rownames(dfMeta), rownames(dfData))
 dfMeta = droplevels.data.frame(dfMeta)
+dfMeta$outcome_numeric = ifelse(dfMeta$outcome == 'TERM', 0, 1)
+colnames(dfMeta)
+dfMeta = dfMeta[,c(6, 3, 5)]
+str(dfMeta)
+
+## some acrobatics to check data matrix
+mCounts = as.matrix(dfData)
+dim(mCounts)
+mCounts = t(mCounts)
+mCounts[1:10, 1:10]
+range(mCounts)
+# remove NA values
+f = apply(mCounts, 2, is.na)
+f2 = rowSums(f)
+table(f2)
+# # it appears some rows are NA i.e. proteins not detected? or data absent
+# f = mCounts[which(f2 > 0), ]
+# f[,1:10]
+dim(mCounts); dim(na.omit(mCounts))
+# mCounts = na.omit(mCounts)
+range(mCounts)
+plot(density(mCounts))
+table(mCounts == 0)
+
+## how many zeros in each variable
+z = t(apply(mCounts, 1, function(x) x == 0))
+dim(z)
+iZeros = rowSums(z)
+hist(iZeros)
+table(dfMeta$outcome_numeric)
+25/(25+58)
+iZeros[iZeros > 15]
+cvDrop = names(iZeros)[iZeros > 15]
+
+## transformation
+## https://homepages.inf.ed.ac.uk/rbf/HIPR2/pixexp.htm
+fTransform = function(x, c=1, r = 0.5){
+  return(c * (x^r))
+}
+
+mCounts = mCounts[!(rownames(mCounts) %in% cvDrop), ]
+dim(mCounts)
+
+x = as.vector(mCounts)
+plot(density(log(x+1)))
+plot(density(fTransform(x, r = 0.4)))
+m = apply(mCounts, 2, fTransform, c=1, r=0.4)
+dim(m); dim(mCounts)
+mCounts = m
+plot(density(mCounts))
 
 ## structure of the metadata
 xtabs( ~ dfMeta$outcome_numeric + dfMeta$Age_group)
@@ -39,27 +87,8 @@ axis(1, at = b, labels = colnames(p_outcome_given_age.bmi), las=2, cex.axis=0.7,
      tick=F)
 legend('top', legend = c('0', '1'), fill=c('black', 'grey'), xpd=T,
        horiz=T, inset=c(0, -0.2))
-## some acrobatics to check data matrix
-mCounts = as.matrix(dfData)
-dim(mCounts)
-mCounts = t(mCounts)
-mCounts[1:10, 1:10]
-range(mCounts)
-# remove NA values
-f = apply(mCounts, 2, is.na)
-f2 = rowSums(f)
-table(f2)
-# it appears some rows are NA i.e. proteins not detected? or data absent
-f = mCounts[which(f2 > 0), ]
-f[,1:10]
-dim(mCounts); dim(na.omit(mCounts))
-mCounts = na.omit(mCounts)
-range(mCounts)
-plot(density(mCounts))
-## try a logit transformation of the data to add more dynamic range
-library(car)
-plot(density(logit(mCounts)))
-mCounts = logit(mCounts)
+
+
 ## some EDA diagnostic plots on the data matrix
 library(downloader)
 url = 'https://raw.githubusercontent.com/uhkniazi/CDiagnosticPlots/experimental/CDiagnosticPlots.R'
@@ -75,6 +104,10 @@ oDiag.1 = CDiagnosticPlots(mCounts, 'Metabolomics')
 # the batch variable we wish to colour by, 
 # this can be any grouping/clustering in the data capture process
 str(dfMeta)
+fBatch = factor(dfMeta$outcome_numeric)
+fBatch = factor(dfMeta$Age_group)
+fBatch = factor(dfMeta$BMI_group)
+
 fBatch = factor(dfMeta$Age_group):factor(dfMeta$BMI_group)
 levels(fBatch)
 table(fBatch)
@@ -213,7 +246,7 @@ simulateOne = function(mu, sigma, nu){
 
 ## sample n values, numerous times
 mDraws.sim = matrix(NA, nrow = nrow(dfData), ncol=300)
-l = extract(fit.stan.1)
+l = extract(fit.stan.3)
 for (i in 1:300){
   p = sample(1:nrow(l$mu), 1)
   mDraws.sim[,i] = simulateOne(l$mu[p,], 
