@@ -29,23 +29,31 @@ str(dfMeta)
 mCounts = as.matrix(dfData)
 dim(mCounts)
 mCounts = t(mCounts)
-mCounts[1:10, 1:10]
-range(mCounts)
-# remove NA values
-f = apply(mCounts, 2, is.na)
-f2 = rowSums(f)
-table(f2)
-# # it appears some rows are NA i.e. proteins not detected? or data absent
-# f = mCounts[which(f2 > 0), ]
-# f[,1:10]
-dim(mCounts); dim(na.omit(mCounts))
-# mCounts = na.omit(mCounts)
-range(mCounts)
+
+## variables with most 0s
+ivProb = apply(mCounts, 1, function(inData) {
+  # inData[inData < 1] = 0
+  inData = as.logical(inData)
+  lData = list('success'=sum(inData), fail=sum(!inData))
+  return(mean(rbeta(1000, lData$success + 0.5, lData$fail + 0.5)))
+})
+names(ivProb) = rownames(mCounts)
+i = which(ivProb >= 0.3)
+length(i)
+ivProb[-i]
+dim(mCounts)
+mCounts = mCounts[i,]
+
+## transformation
+## https://homepages.inf.ed.ac.uk/rbf/HIPR2/pixexp.htm
+fTransform = function(x, c=1, r = 0.5){
+  return(c * (x^r))
+}
+
+m = apply(mCounts, 2, fTransform, c=1, r=0.4)
+dim(m); dim(mCounts)
+mCounts = m
 plot(density(mCounts))
-table(mCounts == 0)
-## try a log transformation of the data to add more dynamic range
-plot(density(log(mCounts+1)))
-mCounts = log(mCounts+1)
 
 ### reduce the number of variables with various steps
 ## remove variables with 0 sd i.e. not changing 
@@ -76,46 +84,6 @@ jitter.binary = function(a, jitt=.05){
   ifelse (a==0, runif (length(a), 0, jitt), runif (length(a), 1-jitt, 1))
 }
 
-fGroups.jitt = jitter.binary(as.numeric(df$fGroups)-1)
-
-# plot(as.numeric(df$Age_group), fGroups.jitt, pch=20, xlab='Age group', ylab='Probability of preterm',
-#      main='Prediction of Preterm vs Age group')
-# x = seq(min(df$CGSamDel), max(df$CGSamDel), length.out = 100)
-# m = cbind(1, mean(df$CGAsampling), x)
-# c = coef(f)
-# lines(x, plogis(m %*% c), col='black')
-# m = cbind(1, min(df$CGAsampling), x)
-# lines(x, plogis(m %*% c), col='red')
-# m = cbind(1, max(df$CGAsampling), x)
-# lines(x, plogis(m %*% c), col='green')
-# legend('bottomleft', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
-
-# plot(df$CGAsampling, fGroups.jitt, pch=20, xlab='CGAsampling', ylab='Probability of preterm',
-#      main='Prediction of Preterm vs CGAsampling')
-# x = seq(min(df$CGAsampling), max(df$CGAsampling), length.out = 100)
-# m = cbind(1, x, mean(df$CGSamDel))
-# c = coef(f)
-# lines(x, plogis(m %*% c), col='black')
-# m = cbind(1, x, min(df$CGSamDel))
-# lines(x, plogis(m %*% c), col='red')
-# m = cbind(1, x, max(df$CGSamDel))
-# lines(x, plogis(m %*% c), col='green')
-# legend('bottomleft', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
-
-# ## the figures suggest that CGAsampling has little effect in the 
-# ## presence or absence of CGSamDel
-# f2 = glm(fGroups ~ CGSamDel, data=df, family=binomial(link='logit'))
-# summary(f2)
-# 
-# plot(df$CGSamDel, fGroups.jitt, pch=20, xlab='CGSamDel', ylab='Probability of preterm',
-#      main='Prediction of Preterm vs CGSamDel')
-# x = seq(min(df$CGSamDel), max(df$CGSamDel), length.out = 100)
-# m = cbind(1, x)
-# c = coef(f2)
-# lines(x, plogis(m %*% c), col='black')
-
-# anova(f, f2)
-
 # propensity score
 ivPropensity = fitted(f)
 plot(density(ivPropensity))
@@ -124,48 +92,6 @@ fG = lData.train$covariates$fGroups
 hist2(ivPropensity[fG=='1'], 
       ivPropensity[fG=='0'], legends = c('pr', 'n'))
 
-## as there is no overlap, use the covariates only in overlapping areas
-# ## bin the propensity score vector
-# ## to find overlapping bins from both pre and norm groups
-# b = cut(ivPropensity, breaks = 5)
-# iNorm = b[fG=='norm']
-# iIndex = which(b %in% unique(iNorm))
-# ivPropensity.sub = ivPropensity[iIndex]
-# fG.sub = fG[iIndex]
-# hist2(ivPropensity.sub[fG.sub=='pre'], 
-#       ivPropensity.sub[fG.sub=='norm'], legends = c('pr', 'n'))
-# table(fG)
-# table(fG.sub)
-# ## this seems to leave almost no pre observations behind
-## repeat on individual covariates to choose common support regions
-# ivPropensity = lData.train$covariates$CGSamDel
-# 
-# hist2(ivPropensity[fG=='pre'], 
-#       ivPropensity[fG=='norm'], legends = c('pr', 'n'))
-
-# ## bin the propensity score vector
-# ## to find overlapping bins from both pre and norm groups
-# b = cut(ivPropensity, breaks = 10)
-# levels(b)
-# iNorm = b[fG=='norm']
-# iPre = b[fG == 'pre']
-# iInter = sort(intersect(iPre, iNorm))
-# iIndex = which(b %in% iInter)
-# ivPropensity.sub = ivPropensity[iIndex]
-# fG.sub = fG[iIndex]
-# hist2(ivPropensity.sub[fG.sub=='pre'], 
-#       ivPropensity.sub[fG.sub=='norm'], legends = c('pr', 'n'))
-# table(fG)
-# table(fG.sub)
-
-## this match is more useful overlap - use this index to subset the data
-# lData.train.original = lData.train
-# lData.train$iIndex = iIndex
-# lData.train$data = lData.train$data[iIndex,]
-# lData.train$covariates = lData.train$covariates[iIndex,]
-
-# perform matching using propensity score
-# library(MatchIt)
 colnames(lData.train$covariates)
 z = lData.train$covariates$outcome_numeric
 df = data.frame(fGroups = z, a=lData.train$covariates$Age_group, b=lData.train$covariates$BMI_group)
@@ -174,42 +100,8 @@ f = glm(fGroups ~ a + b + a:b, data = df,
         family=binomial(link='logit'))
 summary(f)
 
-# ## redraw figures 
-# fGroups.jitt = jitter.binary(df$fGroups)
-# 
-# plot(df$CGSamDel, fGroups.jitt, pch=20, xlab='CGSamDel', ylab='Probability of preterm',
-#      main='Prediction of Preterm vs CGSamDel')
-# x = seq(min(df$CGSamDel), max(df$CGSamDel), length.out = 100)
-# m = cbind(1, mean(df$CGAsampling), x)
-# c = coef(f)
-# lines(x, plogis(m %*% c), col='black')
-# m = cbind(1, min(df$CGAsampling), x)
-# lines(x, plogis(m %*% c), col='red')
-# m = cbind(1, max(df$CGAsampling), x)
-# lines(x, plogis(m %*% c), col='green')
-# legend('left', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
-# 
-# plot(df$CGAsampling, fGroups.jitt, pch=20, xlab='CGAsampling', ylab='Probability of preterm',
-#      main='Prediction of Preterm vs CGAsampling')
-# x = seq(min(df$CGAsampling), max(df$CGAsampling), length.out = 100)
-# m = cbind(1, x, mean(df$CGSamDel))
-# c = coef(f)
-# lines(x, plogis(m %*% c), col='black')
-# m = cbind(1, x, min(df$CGSamDel))
-# lines(x, plogis(m %*% c), col='red')
-# m = cbind(1, x, max(df$CGSamDel))
-# lines(x, plogis(m %*% c), col='green')
-# legend('left', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
-# 
-# df$propensity=fitted(f)
-# hist(df$propensity)
-# hist2(df$propensity[df$fGroups==1], df$propensity[df$fGroups==0])
 library(Matching)
-# matches = matchit(fGroups ~ CGAsampling + CGSamDel, data = df, 
-#                   replace = T)
-# summary(matches)
 colnames(df)
-#matches = Match(Tr=df$fGroups, X = df$propensity, estimand = 'ATE')
 # making sure no duplications as due to smaller sample sizes
 # duplications create over training and correlations between variables
 #set.seed(123)
@@ -225,32 +117,37 @@ lData.train.full$covariates$matched = factor(f)
 lData.train$data = lData.train$data[iIndex,]
 lData.train$covariates = lData.train$covariates[iIndex,]
 
-## check propensity score after matching
-ivPropensity = lData.train$propensity
+## calculate propensity score after matching
+colnames(lData.train$covariates)
+df = data.frame(lData.train$covariates[, c(5, 2, 3)])
+str(df)
+f = glm(fGroups ~ Age_group+BMI_group+Age_group:BMI_group , data=df, family=binomial(link='logit'))
+summary(f)
+ivPropensity = fitted(f)
 fG = lData.train$covariates$fGroups
 hist2(ivPropensity[fG=='1'], 
-      ivPropensity[fG=='0'], legends = c('pr', 'n'))
+      ivPropensity[fG=='0'], legends = c('pr', 'n'), main='After matching', xlab='Propensity')
 
-## structure of the metadata after matching
-dfMeta = lData.train$covariates
-dfMeta = droplevels.data.frame(dfMeta)
-xtabs( ~ dfMeta$outcome_numeric + dfMeta$Age_group)
-xtabs( ~ dfMeta$outcome_numeric + dfMeta$BMI_group)
-f = dfMeta$BMI_group:dfMeta$Age_group
-o = dfMeta$outcome_numeric
-xtabs( ~ o + f)
-table(dfMeta$outcome_numeric)
-t = as.matrix(xtabs( ~ o + f))
-t = t/sum(rowSums(t))
-# estimate P(outcome | age, bmi)
-p_age.bmi = colSums(t)
-p_outcome_given_age.bmi = round(sweep(t, 2, p_age.bmi, FUN = '/'), 3)
-
-b = barplot(p_outcome_given_age.bmi, beside = F, xaxt='n')
-axis(1, at = b, labels = colnames(p_outcome_given_age.bmi), las=2, cex.axis=0.7,
-     tick=F)
-legend('top', legend = c('0', '1'), fill=c('black', 'grey'), xpd=T,
-       horiz=T, inset=c(0, -0.2))
+# ## structure of the metadata after matching
+# dfMeta = lData.train$covariates
+# dfMeta = droplevels.data.frame(dfMeta)
+# xtabs( ~ dfMeta$outcome_numeric + dfMeta$Age_group)
+# xtabs( ~ dfMeta$outcome_numeric + dfMeta$BMI_group)
+# f = dfMeta$BMI_group:dfMeta$Age_group
+# o = dfMeta$outcome_numeric
+# xtabs( ~ o + f)
+# table(dfMeta$outcome_numeric)
+# t = as.matrix(xtabs( ~ o + f))
+# t = t/sum(rowSums(t))
+# # estimate P(outcome | age, bmi)
+# p_age.bmi = colSums(t)
+# p_outcome_given_age.bmi = round(sweep(t, 2, p_age.bmi, FUN = '/'), 3)
+# 
+# b = barplot(p_outcome_given_age.bmi, beside = F, xaxt='n')
+# axis(1, at = b, labels = colnames(p_outcome_given_age.bmi), las=2, cex.axis=0.7,
+#      tick=F)
+# legend('top', legend = c('0', '1'), fill=c('black', 'grey'), xpd=T,
+#        horiz=T, inset=c(0, -0.2))
 # df = data.frame(d=lData.train$data[,1], y=lData.train$covariates$fGroups, c=lData.train$covariates$Csite, p=ivPropensity)
 # 
 # ## try some model fits with covariates
@@ -321,7 +218,7 @@ plot.var.selection(oVar.r)
 
 ## there does seem to be a difference in the top variables after adjustment
 ######################## Stan section for binomial regression approach
-dfData = data.frame(scale(lData.train$data[,cvTopVariables.lm]))
+dfData = data.frame((lData.train$data[,cvTopVariables.lm]))
 dim(dfData)
 dfData$fGroups = lData.train$covariates$fGroups
 table(dfData$fGroups)
@@ -408,7 +305,8 @@ xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial',
 # ## find correlated variables
 dfData.bk = dfData
 dim(dfData)
-mData = as.matrix(dfData[,-43])
+length(cvTopVariables.lm)
+mData = as.matrix(dfData[,-27])
 length(as.vector(mData))
 mCor = cor(mData, use="na.or.complete")
 library(caret)
@@ -497,7 +395,7 @@ levels(dfData$fGroups)
 head(dfData)
 lData = list(resp=ifelse(dfData$fGroups == '1', 1, 0), mModMatrix=model.matrix(fGroups ~ 1 + ., data=dfData))
 
-stanDso = rstan::stan_model(file='binomialRegression.stan')
+stanDso = rstan::stan_model(file='binomialRegressionGuessMixture.stan')
 
 lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData$mModMatrix,
                  y=lData$resp)
@@ -508,12 +406,12 @@ lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData
 # }
 
 
-fit.stan = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('betas', 'log_lik'), cores=4,# init=initf,
+fit.stan = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('betas', 'log_lik', 'guess'), cores=4,# init=initf,
                     control=list(adapt_delta=0.99, max_treedepth = 13))
 
 # save(fit.stan, file='temp/fit.stan.binom_preterm_met.rds')
 
-print(fit.stan, c('betas'))#, 'guess'))
+print(fit.stan, c('betas', 'guess'))
 # print(fit.stan, 'tau')
 # traceplot(fit.stan, 'tau')
 
@@ -524,6 +422,12 @@ dim(mCoef)
 iIntercept = mCoef[,1]
 mCoef = mCoef[,-1]
 colnames(mCoef) = colnames(lData$mModMatrix)[2:ncol(lData$mModMatrix)]
+
+## correlation of coefficients
+mCor = cor(mCoef)
+dim(mCor)
+pairs(mCoef, pch=20, cex=0.6)
+heatmap(abs(mCor), Rowv = NA, Colv = NA, symm = T, scale = 'none', cexRow = 1, cexCol = 1)
 
 ## coeftab object 
 ct.1 = coeftab(fit.stan)
@@ -548,17 +452,16 @@ xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 3 Variables',
        ylab='Predicted Probability of Pre-term',
        data=dfData)
 
-f1 = fit.stan # 7 var and guess
-f2 = fit.stan # 7 var only
+f1 = fit.stan # 3 var and without guess
+f2 = fit.stan # 3 var with guess
 ## go back to refit with less number of variables
 plot(compare(f1, f2))
 compare(f1, f2)
-## model without the guess parameter appears to be better under WAIC
-## remake figure with full data
-## this step requires to refit the model without scaling, as 
+# model without guess parameter is slightly better
 ## data unmatched data is also being used here
 df = data.frame((lData.train.full$data[,colnames(mCoef)[-1]]))
 df$fGroups = lData.train.full$covariates$fGroups:lData.train.full$covariates$matched
+head(df)
 X = as.matrix(cbind(rep(1, times=nrow(df)), df[,-(ncol(df))]))
 colnames(X) = colnames(mCoef)
 head(X)
@@ -566,6 +469,13 @@ ivPredict = plogis(mypred(colMeans(mCoef), list(mModMatrix=X))[,1])
 xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 3 Variables with Dropped',
        ylab='Predicted Probability of Pre-term',
        data=df)
+fPredict = ifelse(ivPredict > 0.5, 'P', 'N')
+fOriginal = lData.train.full$covariates$fGroups
+table(fPredict, fOriginal)
+
+fPredict = ifelse(ivPredict > 0.3, 'P', 'N')
+table(fPredict, fOriginal)
+
 # ## which samples from the control group are not predicted correctly
 # iOutliers = which(ivPredict > 0.6 & df$fGroups == '0')
 # f = as.numeric(df$fGroups) - 1
@@ -581,30 +491,49 @@ xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 3 Variables wit
 ### figures
 fGroups.jitt = jitter.binary(as.numeric(dfData$fGroups)-1)
 
-plot(dfData$Betaine..t., fGroups.jitt, pch=20, xlab='AGR3', ylab='Probability of preterm',
+plot(dfData$Threonine, fGroups.jitt, pch=20, xlab='Threonine', ylab='Probability of preterm',
      main='Prediction of Preterm')
-# x = seq(min(dfData$Asparagine), max(dfData$Asparagine), length.out = 100)
-# m = cbind(1, x, matrix(0, length(x), ncol = 6))
-# c = colMeans(extract(fit.stan)$betas)
-# lines(x, plogis(m %*% c), col='black')
+x = seq(min(dfData$Threonine), max(dfData$Threonine), length.out = 100)
+colnames(dfData)
+m = cbind(1, matrix(colMeans(dfData[,-4]), nrow = length(x), ncol = 3, byrow = T))
+m[,2] = x
+c = colMeans(extract(fit.stan)$betas)
+lines(x, plogis(m %*% c), col='black')
 # m = cbind(1, x, min(dfData$TRANCE), min(dfData$CGAsampling), min(dfData$CGSamDel))
 # lines(x, plogis(m %*% c), col='red')
 # m = cbind(1, x, max(dfData$TRANCE), max(dfData$CGAsampling), max(dfData$CGSamDel))
 # lines(x, plogis(m %*% c), col='green')
 # legend('left', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
-# 
-# plot(dfData$TRANCE, fGroups.jitt, pch=20, xlab='TRANCE', ylab='Probability of preterm',
-#      main='Prediction of Preterm')
-# x = seq(min(dfData$TRANCE), max(dfData$TRANCE), length.out = 100)
-# m = cbind(1, mean(dfData$AGR3), x, mean(dfData$CGAsampling), mean(dfData$CGSamDel))
-# c = colMeans(extract(fit.stan)$betas)
-# lines(x, plogis(m %*% c), col='black')
-# m = cbind(1, min(dfData$AGR3), x, min(dfData$CGAsampling), min(dfData$CGSamDel))
-# lines(x, plogis(m %*% c), col='red')
-# m = cbind(1, max(dfData$AGR3), x, max(dfData$CGAsampling), max(dfData$CGSamDel))
-# lines(x, plogis(m %*% c), col='green')
-# legend('right', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
 
+plot(dfData$Pyruvate, fGroups.jitt, pch=20, xlab='Pyruvate', ylab='Probability of preterm',
+     main='Prediction of Preterm')
+x = seq(min(dfData$Pyruvate), max(dfData$Pyruvate), length.out = 100)
+colnames(dfData)
+m = cbind(1, matrix(colMeans(dfData[,-4]), nrow = length(x), ncol = 3, byrow = T))
+m[,3] = x
+c = colMeans(extract(fit.stan)$betas)
+lines(x, plogis(m %*% c), col='black')
+
+plot(dfData$Taurine, fGroups.jitt, pch=20, xlab='Taurine', ylab='Probability of preterm',
+     main='Prediction of Preterm')
+x = seq(min(dfData$Taurine), max(dfData$Taurine), length.out = 100)
+colnames(dfData)
+m = cbind(1, matrix(colMeans(dfData[,-4]), nrow = length(x), ncol = 3, byrow = T))
+m[,4] = x
+c = colMeans(extract(fit.stan)$betas)
+lines(x, plogis(m %*% c), col='black')
+
+m = apply(dfData[,-4], 2, min)
+m = cbind(1, matrix(m, nrow=length(x), ncol=3, byrow = T))
+m[,4] = x
+c = colMeans(extract(fit.stan)$betas)
+lines(x, plogis(m %*% c), col='red')
+
+m = apply(dfData[,-4], 2, max)
+m = cbind(1, matrix(m, nrow=length(x), ncol=3, byrow = T))
+m[,4] = x
+c = colMeans(extract(fit.stan)$betas)
+lines(x, plogis(m %*% c), col='green')
 
 # #########################################################################
 # ### repeat model fitting on unadjusted data with adjustment covariate
