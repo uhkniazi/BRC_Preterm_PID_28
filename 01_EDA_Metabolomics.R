@@ -41,16 +41,39 @@ dim(mCounts); dim(na.omit(mCounts))
 range(mCounts)
 plot(density(mCounts))
 table(mCounts == 0)
+table(mCounts < 1)
 
-## how many zeros in each variable
-z = t(apply(mCounts, 1, function(x) x == 0))
-dim(z)
-iZeros = rowSums(z)
-hist(iZeros)
+## variables with most 0s
+ivProb = apply(mCounts, 1, function(inData) {
+  # inData[inData < 1] = 0
+  inData = as.logical(inData)
+  lData = list('success'=sum(inData), fail=sum(!inData))
+  return(mean(rbeta(1000, lData$success + 0.5, lData$fail + 0.5)))
+})
+names(ivProb) = rownames(mCounts)
+hist(ivProb, main='Proportion of non-zeros in each variable', xlab='')
+summary(ivProb)
+quantile(ivProb, 0:10/10)
 table(dfMeta$outcome_numeric)
-25/(25+58)
-iZeros[iZeros > 15]
-cvDrop = names(iZeros)[iZeros > 15]
+
+# ## how many zeros in each variable
+# z = t(apply(mCounts, 1, function(x) x == 0))
+# dim(z)
+# iZeros = rowSums(z)
+# hist(iZeros)
+# table(dfMeta$outcome_numeric)
+# 25/(25+58)
+# iZeros[iZeros > 15]
+# 25/(58+25)
+# about 30% of the data is from minority class
+# drop variables with lower probability of expression
+## use a binary matrix for lower expressed variables
+i = which(ivProb >= 0.3)
+length(i)
+ivProb[-i]
+dim(mCounts)
+mCounts = mCounts[i,]
+# cvDrop = names(iZeros)[iZeros > 15]
 
 ## transformation
 ## https://homepages.inf.ed.ac.uk/rbf/HIPR2/pixexp.htm
@@ -58,7 +81,7 @@ fTransform = function(x, c=1, r = 0.5){
   return(c * (x^r))
 }
 
-mCounts = mCounts[!(rownames(mCounts) %in% cvDrop), ]
+# mCounts = mCounts[!(rownames(mCounts) %in% cvDrop), ]
 dim(mCounts)
 
 x = as.vector(mCounts)
