@@ -5,10 +5,9 @@
 
 source('header.R')
 
-dfMeta = read.csv(file.choose(), header=T, stringsAsFactors = T)
-dfData = read.csv(file.choose(), header=T)
-rownames(dfMeta) = 1:nrow(dfMeta)
-rownames(dfData) = 1:nrow(dfMeta)
+dfMeta = read.csv(file.choose(), header=T, stringsAsFactors = T, row.names = 1)
+dfData = read.csv(file.choose(), header=T, row.names = 1)
+identical(rownames(dfMeta), rownames(dfData))
 table(is.na(dfMeta))
 table(is.na(dfData))
 str(dfMeta)
@@ -18,9 +17,9 @@ dfMeta = dfMeta[-52,]
 dfData = dfData[-52,]
 identical(rownames(dfMeta), rownames(dfData))
 dfMeta = droplevels.data.frame(dfMeta)
-dfMeta$outcome_numeric = ifelse(dfMeta$outcome == 'TERM', 0, 1)
+# dfMeta$outcome_numeric = ifelse(dfMeta$outcome == 'TERM', 0, 1)
 colnames(dfMeta)
-dfMeta = dfMeta[,c(6, 3, 5)]
+dfMeta = dfMeta[,c(3, 5, 8)]
 str(dfMeta)
 
 ## some acrobatics to check data matrix
@@ -44,17 +43,17 @@ table(mCounts == 0)
 table(mCounts < 1)
 
 ## variables with most 0s
-ivProb = apply(mCounts, 1, function(inData) {
-  # inData[inData < 1] = 0
-  inData = as.logical(inData)
-  lData = list('success'=sum(inData), fail=sum(!inData))
-  return(mean(rbeta(1000, lData$success + 0.5, lData$fail + 0.5)))
-})
-names(ivProb) = rownames(mCounts)
-hist(ivProb, main='Proportion of non-zeros in each variable', xlab='')
-summary(ivProb)
-quantile(ivProb, 0:10/10)
-table(dfMeta$outcome_numeric)
+# ivProb = apply(mCounts, 1, function(inData) {
+#   # inData[inData < 1] = 0
+#   inData = as.logical(inData)
+#   lData = list('success'=sum(inData), fail=sum(!inData))
+#   return(mean(rbeta(1000, lData$success + 0.5, lData$fail + 0.5)))
+# })
+# names(ivProb) = rownames(mCounts)
+# hist(ivProb, main='Proportion of non-zeros in each variable', xlab='')
+# summary(ivProb)
+# quantile(ivProb, 0:10/10)
+# table(dfMeta$outcome_numeric)
 
 # ## how many zeros in each variable
 # z = t(apply(mCounts, 1, function(x) x == 0))
@@ -68,11 +67,11 @@ table(dfMeta$outcome_numeric)
 # about 30% of the data is from minority class
 # drop variables with lower probability of expression
 ## use a binary matrix for lower expressed variables
-i = which(ivProb >= 0.3)
-length(i)
-ivProb[-i]
-dim(mCounts)
-mCounts = mCounts[i,]
+# i = which(ivProb >= 0.3)
+# length(i)
+# ivProb[-i]
+# dim(mCounts)
+# mCounts = mCounts[i,]
 # cvDrop = names(iZeros)[iZeros > 15]
 
 ## transformation
@@ -85,9 +84,11 @@ fTransform = function(x, c=1, r = 0.5){
 dim(mCounts)
 
 x = as.vector(mCounts)
-plot(density(log(x+1)))
-plot(density(fTransform(x, r = 0.4)))
-m = apply(mCounts, 2, fTransform, c=1, r=0.4)
+plot(density(log(x)))
+library(car)
+plot(density(logit(x)))
+plot(density(fTransform(x, c=2, r = 0.1)))
+m = apply(mCounts, 2, fTransform, c=1, r=0.1)
 dim(m); dim(mCounts)
 mCounts = m
 plot(density(mCounts))
@@ -147,7 +148,7 @@ l = CDiagnosticPlotsGetParameters(oDiag.1)
 l$PCA.jitter = F
 l$HC.jitter = F
 oDiag.1 = CDiagnosticPlotsSetParameters(oDiag.1, l)
-plot.PCA(oDiag.1, fBatch, cex.main=1, pch = iPch, pch.cex = 1)#, csLabels = as.character(dfMeta$fGroups))
+plot.PCA(oDiag.1, fBatch, cex.main=1, pch = iPch, pch.cex = 1, csLabels = '')
 legend('top', legend = c('0', '1'), pch=c(17, 20))
 plot.dendogram(oDiag.1, fBatch, labels_cex = 0.8, cex.main=0.7)
 #ob = calculateExtremeValues(oDiag.1)

@@ -6,11 +6,9 @@
 #### data loading and formatting
 source('header.R')
 
-# load the data
-dfMeta = read.csv(file.choose(), header=T, stringsAsFactors = T)
-dfData = read.csv(file.choose(), header=T)
-rownames(dfMeta) = 1:nrow(dfMeta)
-rownames(dfData) = 1:nrow(dfMeta)
+dfMeta = read.csv(file.choose(), header=T, stringsAsFactors = T, row.names = 1)
+dfData = read.csv(file.choose(), header=T, row.names = 1)
+identical(rownames(dfMeta), rownames(dfData))
 table(is.na(dfMeta))
 table(is.na(dfData))
 str(dfMeta)
@@ -20,29 +18,30 @@ dfMeta = dfMeta[-52,]
 dfData = dfData[-52,]
 identical(rownames(dfMeta), rownames(dfData))
 dfMeta = droplevels.data.frame(dfMeta)
-dfMeta$outcome_numeric = ifelse(dfMeta$outcome == 'TERM', 0, 1)
+# dfMeta$outcome_numeric = ifelse(dfMeta$outcome == 'TERM', 0, 1)
 colnames(dfMeta)
-dfMeta = dfMeta[,c(6, 3, 5)]
+dfMeta = dfMeta[,c(3, 5, 8)]
 str(dfMeta)
 
 ## some acrobatics to check data matrix
 mCounts = as.matrix(dfData)
 dim(mCounts)
 mCounts = t(mCounts)
-
-## variables with most 0s
-ivProb = apply(mCounts, 1, function(inData) {
-  # inData[inData < 1] = 0
-  inData = as.logical(inData)
-  lData = list('success'=sum(inData), fail=sum(!inData))
-  return(mean(rbeta(1000, lData$success + 0.5, lData$fail + 0.5)))
-})
-names(ivProb) = rownames(mCounts)
-i = which(ivProb >= 0.3)
-length(i)
-ivProb[-i]
-dim(mCounts)
-mCounts = mCounts[i,]
+mCounts[1:10, 1:10]
+range(mCounts)
+# remove NA values
+f = apply(mCounts, 2, is.na)
+f2 = rowSums(f)
+table(f2)
+# # it appears some rows are NA i.e. proteins not detected? or data absent
+# f = mCounts[which(f2 > 0), ]
+# f[,1:10]
+dim(mCounts); dim(na.omit(mCounts))
+# mCounts = na.omit(mCounts)
+range(mCounts)
+plot(density(mCounts))
+table(mCounts == 0)
+table(mCounts < 1)
 
 ## transformation
 ## https://homepages.inf.ed.ac.uk/rbf/HIPR2/pixexp.htm
@@ -50,7 +49,13 @@ fTransform = function(x, c=1, r = 0.5){
   return(c * (x^r))
 }
 
-m = apply(mCounts, 2, fTransform, c=1, r=0.4)
+# mCounts = mCounts[!(rownames(mCounts) %in% cvDrop), ]
+dim(mCounts)
+
+x = as.vector(mCounts)
+plot(density(fTransform(x, c=2, r = 0.1)))
+m = apply(mCounts, 2, fTransform, c=1, r=0.1)
+range(m)
 dim(m); dim(mCounts)
 mCounts = m
 plot(density(mCounts))
@@ -113,6 +118,7 @@ table(duplicated(iIndex))
 lData.train.full = lData.train
 f = rep('dropped', times=length(df$fGroups))
 f[iIndex] = 'matched' 
+table(f)
 lData.train.full$covariates$matched = factor(f)
 lData.train$data = lData.train$data[iIndex,]
 lData.train$covariates = lData.train$covariates[iIndex,]
@@ -306,7 +312,7 @@ xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial',
 dfData.bk = dfData
 dim(dfData)
 length(cvTopVariables.lm)
-mData = as.matrix(dfData[,-27])
+mData = as.matrix(dfData[,-32])
 length(as.vector(mData))
 mCor = cor(mData, use="na.or.complete")
 library(caret)
@@ -330,7 +336,7 @@ cvTopVariables.bin = names(m)[1:20]
 table(cvTopVariables.bin %in% cvTopVariables.rf)
 cvTopVariables = unique(c(cvTopVariables.rf, cvTopVariables.bin))
 length(cvTopVariables)
-cvTopVariables = cvTopVariables[!(cvTopVariables %in% cvDrop.colinear)]
+#cvTopVariables = cvTopVariables[!(cvTopVariables %in% cvDrop.colinear)]
 ## subset selection
 dfData = data.frame(lData.train$data[,cvTopVariables])
 dim(dfData)
@@ -340,7 +346,7 @@ plot.var.selection(oVar.sub)
 table(fGroups)
 log(25)
 
-cvVar = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 3)
+cvVar = CVariableSelection.ReduceModel.getMinModel(oVar.sub, size = 2)
 
 ## there is a small bug as the 2 proteins 590 and 59 have similar prefix
 ## that is why this additional protein is added to the results
@@ -395,7 +401,7 @@ levels(dfData$fGroups)
 head(dfData)
 lData = list(resp=ifelse(dfData$fGroups == '1', 1, 0), mModMatrix=model.matrix(fGroups ~ 1 + ., data=dfData))
 
-stanDso = rstan::stan_model(file='binomialRegressionGuessMixture.stan')
+stanDso = rstan::stan_model(file='binomialRegression.stan')
 
 lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData$mModMatrix,
                  y=lData$resp)
@@ -406,12 +412,12 @@ lStanData = list(Ntotal=length(lData$resp), Ncol=ncol(lData$mModMatrix), X=lData
 # }
 
 
-fit.stan = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('betas', 'log_lik', 'guess'), cores=4,# init=initf,
+fit.stan = sampling(stanDso, data=lStanData, iter=2000, chains=4, pars=c('betas', 'log_lik'), cores=4,# init=initf,
                     control=list(adapt_delta=0.99, max_treedepth = 13))
 
 # save(fit.stan, file='temp/fit.stan.binom_preterm_met.rds')
 
-print(fit.stan, c('betas', 'guess'))
+print(fit.stan, c('betas'))
 # print(fit.stan, 'tau')
 # traceplot(fit.stan, 'tau')
 
@@ -452,8 +458,8 @@ xyplot(ivPredict ~ fGroups, xlab='Actual Group', main= 'Binomial 3 Variables',
        ylab='Predicted Probability of Pre-term',
        data=dfData)
 
-f1 = fit.stan # 3 var and without guess
-f2 = fit.stan # 3 var with guess
+f1 = fit.stan # 2 var and without guess
+f2 = fit.stan # 2 var with guess
 ## go back to refit with less number of variables
 plot(compare(f1, f2))
 compare(f1, f2)
@@ -491,11 +497,11 @@ table(fPredict, fOriginal)
 ### figures
 fGroups.jitt = jitter.binary(as.numeric(dfData$fGroups)-1)
 
-plot(dfData$Threonine, fGroups.jitt, pch=20, xlab='Threonine', ylab='Probability of preterm',
+plot(dfData$Asparagine, fGroups.jitt, pch=20, xlab='Asp', ylab='Probability of preterm',
      main='Prediction of Preterm')
-x = seq(min(dfData$Threonine), max(dfData$Threonine), length.out = 100)
+x = seq(min(dfData$Asparagine), max(dfData$Asparagine), length.out = 100)
 colnames(dfData)
-m = cbind(1, matrix(colMeans(dfData[,-4]), nrow = length(x), ncol = 3, byrow = T))
+m = cbind(1, matrix(colMeans(dfData[,-3]), nrow = length(x), ncol = 2, byrow = T))
 m[,2] = x
 c = colMeans(extract(fit.stan)$betas)
 lines(x, plogis(m %*% c), col='black')
@@ -505,11 +511,11 @@ lines(x, plogis(m %*% c), col='black')
 # lines(x, plogis(m %*% c), col='green')
 # legend('left', legend = c('Min', 'Average', 'Max'), fill=c('red', 'black', 'green'))
 
-plot(dfData$Pyruvate, fGroups.jitt, pch=20, xlab='Pyruvate', ylab='Probability of preterm',
+plot(dfData$Taurine, fGroups.jitt, pch=20, xlab='Taurine', ylab='Probability of preterm',
      main='Prediction of Preterm')
-x = seq(min(dfData$Pyruvate), max(dfData$Pyruvate), length.out = 100)
+x = seq(min(dfData$Taurine), max(dfData$Taurine), length.out = 100)
 colnames(dfData)
-m = cbind(1, matrix(colMeans(dfData[,-4]), nrow = length(x), ncol = 3, byrow = T))
+m = cbind(1, matrix(colMeans(dfData[,-3]), nrow = length(x), ncol = 2, byrow = T))
 m[,3] = x
 c = colMeans(extract(fit.stan)$betas)
 lines(x, plogis(m %*% c), col='black')
